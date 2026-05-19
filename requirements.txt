@@ -1,0 +1,15 @@
+# Scraper + AI pipeline
+feedparser>=6.0
+requests>=2.30
+beautifulsoup4>=4.12
+python-dateutil>=2.8
+pydantic>=2.0
+googlenewsdecoder>=0.1
+trafilatura>=2.0  # purpose-built article body extraction (better than custom selectors)
+
+# BigQuery loader
+google-cloud-bigquery>=3.0
+
+# Corporate SSL trust store (Windows). Tidak strictly butuh di GitHub Actions
+# tapi tidak ada efek samping kalau ter-install di Linux. Aman untuk pinned.
+pip-system-certs>=4.0

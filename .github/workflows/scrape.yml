@@ -1,0 +1,81 @@
+name: Daily News Scrape & Load
+
+# Schedule: setiap hari 06:00 WIB = 23:00 UTC (hari sebelumnya).
+# Bisa juga di-trigger manual lewat tab Actions di GitHub.
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:  # manual trigger
+    inputs:
+      hours:
+        description: "Window jam ke belakang"
+        default: "24"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape-and-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Authenticate to Google Cloud
+        # Set Application Default Credentials dari SA JSON secret.
+        # google.cloud.bigquery otomatis pick up via ADC.
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_JSON }}
+
+      - name: Run scraper (fetch + LM analysis)
+        run: |
+          python fetch_news.py \
+            --use-groq \
+            --hours "${{ github.event.inputs.hours || '24' }}" \
+            --output news.csv
+
+      - name: Load to BigQuery
+        # bq_load.py skip gracefully kalau JSON kosong (0 artikel) — exit 0.
+        run: python bq_load.py news.json
+
+      - name: Invalidate Vercel cache
+        # Beritahu Next.js drop cached articles → visitor berikutnya dapat data fresh.
+        # Tanpa step ini, cache TTL 24h akan tetap serve data lama sampai expired.
+        # Step di-skip kalau VERCEL_URL belum di-set (mis. sebelum first deploy);
+        # workflow tidak gagal karena ini bukan blocker untuk pipeline scrape itu sendiri.
+        if: success() && env.VERCEL_URL != ''
+        env:
+          VERCEL_URL: ${{ secrets.VERCEL_URL }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          curl -X POST "${VERCEL_URL%/}/api/revalidate" \
+            -H "Authorization: Bearer ${REVALIDATE_SECRET}" \
+            -f -s -S
+
+      - name: Upload artifact (audit trail, 7 hari)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-output-${{ github.run_id }}
+          path: |
+            news.csv
+            news.json
+          retention-days: 7
+          if-no-files-found: ignore
