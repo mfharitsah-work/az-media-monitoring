@@ -41,11 +41,12 @@ function HeroSection() {
         {today}
       </div>
       <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-        Today&rsquo;s News
+        Last 24 Hours
       </h1>
       <p className="mt-2 max-w-2xl text-muted-foreground">
-        Monitor news about AstraZeneca Indonesia and pharma regulatory updates
-        from various sources, with sentiment and location analysis.
+        Rolling window of news about AstraZeneca Indonesia and pharma
+        regulatory updates from trusted sources, with sentiment and location
+        analysis.
       </p>
       <div className="mt-4 flex flex-wrap gap-3">
         <Link
@@ -69,14 +70,14 @@ function HeroSection() {
 }
 
 async function TodayList() {
-  // Prefer "today" articles (timezone Asia/Jakarta). Edge case: early morning
-  // sebelum cron pagi WIB jalan, today bisa kosong walaupun BQ ada artikel
-  // dari kemarin sore. Fallback ke 10 artikel terbaru supaya home tidak kosong.
-  const todayArticles = await articleRepo.findToday(50);
-  const usingFallback = todayArticles.length === 0;
+  // Rolling 24-jam window — konsisten dengan scrape pipeline. Tidak ada lagi
+  // edge case "midnight WIB" karena window-nya rolling, bukan calendar today.
+  // Fallback ke findRecent kalau 24h kosong (mis. pipeline belum pernah run).
+  const recent = await articleRepo.findLast24h(50);
+  const usingFallback = recent.length === 0;
   const articles = usingFallback
     ? await articleRepo.findRecent(10)
-    : todayArticles;
+    : recent;
 
   if (articles.length === 0) {
     return (
@@ -96,13 +97,13 @@ async function TodayList() {
     <div className="space-y-4">
       {usingFallback ? (
         <p className="text-sm text-muted-foreground">
-          No news yet for today. Showing the{" "}
+          No news in the last 24 hours. Showing the{" "}
           <span className="font-medium text-foreground">{articles.length} most recent</span>{" "}
           article{articles.length === 1 ? "" : "s"} instead.
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          {articles.length} latest article{articles.length === 1 ? "" : "s"} today
+          {articles.length} article{articles.length === 1 ? "" : "s"} in the last 24 hours
         </p>
       )}
       {articles.map((article) => (

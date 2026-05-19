@@ -77,10 +77,10 @@ async function queryFindById(id: string): Promise<Article | null> {
   return rows[0] ? normalizeRow(rows[0]) : null;
 }
 
-async function queryFindToday(limit: number): Promise<Article[]> {
+async function queryFindLast24h(limit: number): Promise<Article[]> {
   const sql = `
     SELECT ${SELECT_COLS}
-    FROM ${tbl("articles_today")}
+    FROM ${tbl("articles_last_24h")}
     LIMIT @limit
   `;
   const [rows] = await bq().query({
@@ -119,8 +119,9 @@ function buildWhereFromFilters(filters: ArticleListFilters): {
   const params: Record<string, unknown> = {};
 
   // Date range — "all-time" sengaja tidak menambah kondisi.
-  if (filters.range === "today") {
-    conditions.push(`DATE(date, "Asia/Jakarta") = CURRENT_DATE("Asia/Jakarta")`);
+  // "last-24h" pakai rolling window, bukan calendar today.
+  if (filters.range === "last-24h") {
+    conditions.push(`date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)`);
   } else if (filters.range === "last-7-days") {
     conditions.push(
       `DATE(date, "Asia/Jakarta") >= DATE_SUB(CURRENT_DATE("Asia/Jakarta"), INTERVAL 6 DAY)`,
@@ -266,18 +267,19 @@ function readKpi(r: Record<string, unknown>): AllTimeKpi {
 }
 
 async function queryDailyKpi(): Promise<DailyKpi> {
-  // Single round-trip: all-time aggregates + today's contributions for delta highlights.
+  // Single round-trip: all-time aggregates + last-24h contributions for delta highlights.
+  // "last-24h" = rolling window (konsisten dengan scrape window & articles_last_24h view).
   const sql = `
-    WITH today AS (
+    WITH last_24h AS (
       SELECT *
       FROM ${tbl("articles_latest")}
-      WHERE DATE(date, "Asia/Jakarta") = CURRENT_DATE("Asia/Jakarta")
+      WHERE date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
     )
     SELECT
       ${KPI_BASE_SELECTS},
-      (SELECT COUNT(*) FROM today)                                                          AS total_today,
-      (SELECT COUNTIF(sentiment = 'Positive') - COUNTIF(sentiment = 'Negative') FROM today) AS net_sentiment_today,
-      (SELECT COUNTIF(category = 'About AstraZeneca') FROM today)                           AS az_related_today
+      (SELECT COUNT(*) FROM last_24h)                                                             AS total_last_24h,
+      (SELECT COUNTIF(sentiment = 'Positive') - COUNTIF(sentiment = 'Negative') FROM last_24h)    AS net_sentiment_last_24h,
+      (SELECT COUNTIF(category = 'About AstraZeneca') FROM last_24h)                              AS az_related_last_24h
     FROM ${tbl("articles_latest")}
   `;
   const [rows] = await bq().query({ query: sql });
@@ -285,9 +287,9 @@ async function queryDailyKpi(): Promise<DailyKpi> {
   const n = (key: string) => Number(r[key] ?? 0);
   return {
     ...readKpi(r),
-    totalToday: n("total_today"),
-    netSentimentToday: n("net_sentiment_today"),
-    azRelatedToday: n("az_related_today"),
+    totalLast24h: n("total_last_24h"),
+    netSentimentLast24h: n("net_sentiment_last_24h"),
+    azRelatedLast24h: n("az_related_last_24h"),
   };
 }
 
@@ -353,9 +355,9 @@ export const bigQueryArticleRepository: ArticleRepository = {
     tags: [CACHE_TAG],
   }),
 
-  findToday: unstable_cache(
-    (limit?: number) => queryFindToday(limit ?? 50),
-    ["findToday"],
+  findLast24h: unstable_cache(
+    (limit?: number) => queryFindLast24h(limit ?? 50),
+    ["findLast24h"],
     { revalidate: CACHE_TTL_SEC, tags: [CACHE_TAG] },
   ),
 

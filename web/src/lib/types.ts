@@ -64,7 +64,7 @@ export type ArticleSentiment = z.infer<typeof ArticleSentimentSchema>;
 // Filter / query params untuk list pages
 // =============================================================================
 
-export type DateRange = "today" | "last-7-days" | "all-time" | "custom";
+export type DateRange = "last-24h" | "last-7-days" | "all-time" | "custom";
 
 export interface ArticleListFilters {
   range: DateRange;
@@ -128,14 +128,18 @@ export interface AllTimeKpi {
 }
 
 /**
- * KPI snapshot — all-time totals PLUS today's contribution (delta).
- * Used by landing page so labels match All News but show "+N today" indicator.
+ * KPI snapshot — all-time totals PLUS last-24h contribution (delta).
+ * Used by landing page so labels match All News but show "+N last 24h" indicator.
+ *
+ * Rolling 24h window (sinkron dengan scrape pipeline) — bukan calendar "today".
+ * Konsekuensinya: artikel publish 23:50 kemarin tetap dihitung sebagai "last 24h"
+ * sampai ~23:50 hari ini, jadi UX tidak break di boundary midnight WIB.
  */
 export interface DailyKpi extends AllTimeKpi {
-  /** Articles added today (Asia/Jakarta) */
-  totalToday: number;
-  /** Today's contribution to net sentiment (todayPos − todayNeg) */
-  netSentimentToday: number;
-  /** Today's contribution to AZ Related (Focus + Mentioned added today) */
-  azRelatedToday: number;
+  /** Articles published in rolling last 24h */
+  totalLast24h: number;
+  /** Rolling 24h contribution to net sentiment (pos − neg) */
+  netSentimentLast24h: number;
+  /** Rolling 24h contribution to AZ Related (Focus + Mentioned) */
+  azRelatedLast24h: number;
 }

@@ -53,10 +53,14 @@ FROM (
 WHERE rn = 1;
 
 -- =============================================================================
--- VIEW: articles_today — convenience untuk landing page
+-- VIEW: articles_last_24h — rolling 24-jam window untuk landing page.
+-- Konsisten dengan scrape window (pipeline jalan --hours 24, rolling juga).
+-- Beda dengan calendar "today" view yang sebelumnya: tidak terpengaruh boundary
+-- midnight (artikel publish 23:50 kemarin tetap muncul di view ini sampai
+-- ~23:50 hari ini, bukan langsung hilang setelah ganti tanggal).
 -- =============================================================================
-CREATE OR REPLACE VIEW `az_daily_news_collection.articles_today` AS
+CREATE OR REPLACE VIEW `az_daily_news_collection.articles_last_24h` AS
 SELECT *
 FROM `az_daily_news_collection.articles_latest`
-WHERE DATE(date, "Asia/Jakarta") = CURRENT_DATE("Asia/Jakarta")
+WHERE date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
 ORDER BY date DESC;

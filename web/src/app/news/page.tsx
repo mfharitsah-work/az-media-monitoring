@@ -24,7 +24,7 @@ export const revalidate = 3600;
 
 /** Page size per range — landscape cards lebih besar, gallery lebih kompak. */
 const PAGE_SIZE_BY_RANGE: Record<DateRange, number> = {
-  today: 10,
+  "last-24h": 10,
   "last-7-days": 20,
   "all-time": 20,
   custom: 20,
@@ -32,7 +32,7 @@ const PAGE_SIZE_BY_RANGE: Record<DateRange, number> = {
 
 /**
  * Search params (URL state):
- * - range:     "today" | "last-7-days" | "all-time" | (custom kalau ada `date`)
+ * - range:     "last-24h" | "last-7-days" | "all-time" | (custom kalau ada `date`)
  * - date:      YYYY-MM-DD; kalau diisi, override range → custom
  * - q:         free text search
  * - category:  enum
@@ -46,7 +46,8 @@ export default async function NewsPage({
 }) {
   const sp = await searchParams;
   const { filters, page, pageSize } = parseParams(sp);
-  const isToday = filters.range === "today";
+  // Landscape layout dipakai untuk window kecil (last-24h); gallery untuk yg lebih besar.
+  const isCompactWindow = filters.range === "last-24h";
   const activeRangeTab = sp.date ? "custom" : filters.range;
 
   return (
@@ -72,11 +73,11 @@ export default async function NewsPage({
 
       <Suspense
         key={`list-${JSON.stringify(filters)}-p${page}`}
-        fallback={isToday ? <LandscapeSkeleton /> : <GallerySkeleton />}
+        fallback={isCompactWindow ? <LandscapeSkeleton /> : <GallerySkeleton />}
       >
         <ResultList
           filters={filters}
-          layout={isToday ? "landscape" : "gallery"}
+          layout={isCompactWindow ? "landscape" : "gallery"}
           page={page}
           pageSize={pageSize}
           searchParams={sp}
@@ -91,8 +92,8 @@ function parseParams(sp: Record<string, string | undefined>): {
   page: number;
   pageSize: number;
 } {
-  // Date input override range → custom
-  let range: DateRange = "today";
+  // Date input override range → custom. Default: rolling last-24h.
+  let range: DateRange = "last-24h";
   let customDate: string | undefined;
   if (sp.date) {
     range = "custom";
