@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CHART } from "@/lib/brand";
 import type {
   CategoryBreakdown,
   SentimentTrendPoint,
@@ -22,19 +23,15 @@ import type {
 /**
  * Charts are client components (Recharts pakai window).
  * Data di-fetch di server, passed as props.
+ * Warna dari single source of truth: lib/brand.ts (CHART).
  */
 
-// Color tokens — match badge colors
+// Alias supaya minim diff di body chart
 const COLORS = {
-  positive: "#10b981", // emerald-500
-  neutral: "#64748b", // slate-500
-  negative: "#f43f5e", // rose-500
-  categoryPalette: {
-    "AZ Focus": "#8b5cf6", // violet-500
-    "AZ Mentioned": "#0ea5e9", // sky-500
-    Regulatory: "#f59e0b", // amber-500
-    Competitor: "#f43f5e", // rose-500
-  },
+  positive: CHART.positive,
+  neutral: CHART.neutral,
+  negative: CHART.negative,
+  categoryPalette: CHART.byCategory,
 };
 
 export function SentimentTrendChart({ data }: { data: SentimentTrendPoint[] }) {
@@ -121,7 +118,7 @@ export function TopSourcesChart({ data }: { data: TopSource[] }) {
           interval={0}
         />
         <Tooltip />
-        <Bar dataKey="count" fill="#6366f1" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="count" fill={CHART.bar} radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -148,7 +145,7 @@ export function TopProvincesChart({ data }: { data: TopProvince[] }) {
           interval={0}
         />
         <Tooltip />
-        <Bar dataKey="count" fill="#14b8a6" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="count" fill={CHART.byCategory["Regulatory/Policy"]} radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

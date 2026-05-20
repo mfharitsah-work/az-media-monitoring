@@ -83,7 +83,7 @@ export function NewsFilters() {
           defaultValue={searchParams.get("category") ?? "all"}
           onValueChange={(v) => setParam("category", v)}
         >
-          <SelectTrigger className="w-[200px]">
+          <SelectTrigger className="w-full lg:w-[190px]">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -101,7 +101,7 @@ export function NewsFilters() {
           defaultValue={searchParams.get("subcategory") ?? "all"}
           onValueChange={(v) => setParam("subcategory", v)}
         >
-          <SelectTrigger className="w-[220px]">
+          <SelectTrigger className="w-full lg:w-[210px]">
             <SelectValue placeholder="Subcategory" />
           </SelectTrigger>
           <SelectContent>
@@ -119,7 +119,7 @@ export function NewsFilters() {
           defaultValue={searchParams.get("sentiment") ?? "all"}
           onValueChange={(v) => setParam("sentiment", v)}
         >
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-full lg:w-[150px]">
             <SelectValue placeholder="Sentiment" />
           </SelectTrigger>
           <SelectContent>
@@ -138,7 +138,7 @@ export function NewsFilters() {
           type="date"
           defaultValue={searchParams.get("date") ?? ""}
           onChange={(e) => setParam("date", e.target.value)}
-          className="w-[170px]"
+          className="w-full lg:w-[160px]"
           title="Specific date — overrides range tab when set"
         />
       </FilterField>

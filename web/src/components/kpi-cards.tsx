@@ -2,6 +2,7 @@ import Link from "next/link";
 import { TrendingUp, TrendingDown, Minus, Newspaper, Smile, Target } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { TEXT_TONE, netSentimentColor } from "@/lib/brand";
 import { articleRepo } from "@/lib/repositories";
 import type { AllTimeKpi, ArticleListFilters, DailyKpi } from "@/lib/types";
 
@@ -40,7 +41,7 @@ export async function TodayKpiCards() {
         icon={<Smile className="h-4 w-4" />}
         label="Net Sentiment"
         value={signed(kpi.netSentiment)}
-        valueClassName={sentimentTone(kpi.netSentiment)}
+        valueColor={netSentimentColor(kpi.netSentiment)}
         footer={
           <div className="space-y-1">
             <SentimentBreakdown kpi={kpi} />
@@ -93,7 +94,7 @@ export async function FilteredKpiCards({
         icon={<Smile className="h-4 w-4" />}
         label="Net Sentiment"
         value={signed(kpi.netSentiment)}
-        valueClassName={sentimentTone(kpi.netSentiment)}
+        valueColor={netSentimentColor(kpi.netSentiment)}
         footer={<SentimentBreakdown kpi={kpi} />}
       />
       <KpiCard
@@ -124,7 +125,7 @@ export async function AllTimeKpiCards() {
         icon={<Smile className="h-4 w-4" />}
         label="Net Sentiment"
         value={signed(kpi.netSentiment)}
-        valueClassName={sentimentTone(kpi.netSentiment)}
+        valueColor={netSentimentColor(kpi.netSentiment)}
         footer={<SentimentBreakdown kpi={kpi} />}
       />
       <KpiCard
@@ -161,11 +162,11 @@ export function KpiCardsSkeleton() {
 function SentimentBreakdown({ kpi }: { kpi: AllTimeKpi }) {
   return (
     <span className="block text-xs text-muted-foreground">
-      <span className="text-emerald-600 dark:text-emerald-400">
+      <span style={{ color: TEXT_TONE.positive }} className="font-medium">
         {kpi.positiveCount} positive
       </span>
       {" · "}
-      <span className="text-rose-600 dark:text-rose-400">
+      <span style={{ color: TEXT_TONE.negative }} className="font-medium">
         {kpi.negativeCount} negative
       </span>
       {" · "}
@@ -186,14 +187,15 @@ function KpiCard({
   icon,
   label,
   value,
-  valueClassName = "",
+  valueColor,
   footer,
   href,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number | string;
-  valueClassName?: string;
+  /** Hex untuk warna angka utama. Default: foreground (inherit). */
+  valueColor?: string;
   footer: React.ReactNode;
   href: string;
 }) {
@@ -209,7 +211,10 @@ function KpiCard({
             {icon}
             {label}
           </div>
-          <div className={`mt-3 text-4xl ${label === "Total News" ? 'text-5xl' : 'text-4xl'} font-bold tracking-tight ${valueClassName}`}>
+          <div
+            className="mt-3 text-4xl font-bold tracking-tight sm:text-5xl"
+            style={valueColor ? { color: valueColor } : undefined}
+          >
             {value}
           </div>
           <div className="mt-2">{footer}</div>
@@ -234,11 +239,12 @@ function DeltaBadge({ value, unit }: { value: number; unit: string }) {
   }
   const isUp = value > 0;
   const Icon = isUp ? TrendingUp : TrendingDown;
-  const colorClass = isUp
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-rose-600 dark:text-rose-400";
+  const color = isUp ? TEXT_TONE.positive : TEXT_TONE.negative;
   return (
-    <span className={`inline-flex items-center gap-1 text-sm font-medium ${colorClass}`}>
+    <span
+      className="inline-flex items-center gap-1 text-sm font-medium"
+      style={{ color }}
+    >
       <Icon className="h-4 w-4" />
       {signed(value)} {unit}
     </span>
@@ -247,12 +253,6 @@ function DeltaBadge({ value, unit }: { value: number; unit: string }) {
 
 function signed(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
-}
-
-function sentimentTone(net: number): string {
-  if (net > 0) return "text-emerald-600 dark:text-emerald-400";
-  if (net < 0) return "text-rose-600 dark:text-rose-400";
-  return "text-muted-foreground";
 }
 
 export type { DailyKpi, AllTimeKpi };

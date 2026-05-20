@@ -13,7 +13,7 @@ export const revalidate = 3600;
 
 export default function LandingPage() {
   return (
-    <div className="mx-auto max-w-5xl space-y-10 px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-5xl space-y-8 px-4 py-6 sm:space-y-10 sm:px-6 sm:py-10 lg:px-8">
       <HeroSection />
       <Suspense fallback={<KpiCardsSkeleton />}>
         <TodayKpiCards />

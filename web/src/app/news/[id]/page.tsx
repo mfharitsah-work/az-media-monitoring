@@ -10,8 +10,7 @@ import {
   CategoryBadge,
   SentimentBadge,
   SubcategoryBadge,
-  categoryStripeClass,
-  subcategoryStripeClass,
+  stripeColor,
 } from "@/components/article-badges";
 import { articleRepo } from "@/lib/repositories";
 
@@ -45,14 +44,10 @@ export default async function NewsDetailPage({ params }: { params: Params }) {
     .map((k) => k.trim())
     .filter(Boolean);
 
-  const stripe = article.subcategory
-    ? subcategoryStripeClass[article.subcategory]
-    : article.category
-      ? categoryStripeClass[article.category]
-      : "bg-slate-300";
+  const stripe = stripeColor(article.subcategory, article.category);
 
   return (
-    <article className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+    <article className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
       <Link
         href="/news"
         className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -62,7 +57,11 @@ export default async function NewsDetailPage({ params }: { params: Params }) {
       </Link>
 
       <Card className="overflow-hidden py-0 gap-0">
-        <div className={`h-1.5 w-full ${stripe}`} aria-hidden />
+        <div
+          className="h-1.5 w-full"
+          style={{ backgroundColor: stripe }}
+          aria-hidden
+        />
         <CardContent className="space-y-6 p-6 sm:p-8">
           <div className="flex flex-wrap items-center gap-2">
             <CategoryBadge value={article.category} />

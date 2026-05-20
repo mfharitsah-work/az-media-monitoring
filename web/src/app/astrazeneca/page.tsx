@@ -7,6 +7,7 @@ import { ArticleCardGallery } from "@/components/article-card-gallery";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { articleRepo } from "@/lib/repositories";
+import { TEXT_TONE, netSentimentColor } from "@/lib/brand";
 import type { ArticleListFilters, ArticleSubcategory } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -44,7 +45,7 @@ export default async function AstraZenecaPage({
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
       <Link
         href="/"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -110,12 +111,6 @@ function AzFilterTabs({ activeValue }: { activeValue: string }) {
  */
 async function NetSentimentCard({ filters }: { filters: ArticleListFilters }) {
   const kpi = await articleRepo.filteredKpi(filters);
-  const tone =
-    kpi.netSentiment > 0
-      ? "text-emerald-600 dark:text-emerald-400"
-      : kpi.netSentiment < 0
-        ? "text-rose-600 dark:text-rose-400"
-        : "text-muted-foreground";
   const sign = kpi.netSentiment > 0 ? "+" : "";
 
   return (
@@ -126,16 +121,19 @@ async function NetSentimentCard({ filters }: { filters: ArticleListFilters }) {
             <Smile className="h-4 w-4" />
             Net Sentiment
           </div>
-          <div className={`mt-3 text-4xl font-bold tracking-tight ${tone}`}>
+          <div
+            className="mt-3 text-4xl font-bold tracking-tight"
+            style={{ color: netSentimentColor(kpi.netSentiment) }}
+          >
             {sign}
             {kpi.netSentiment}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
-            <span className="text-emerald-600 dark:text-emerald-400">
+            <span style={{ color: TEXT_TONE.positive }} className="font-medium">
               {kpi.positiveCount} positive
             </span>
             {" · "}
-            <span className="text-rose-600 dark:text-rose-400">
+            <span style={{ color: TEXT_TONE.negative }} className="font-medium">
               {kpi.negativeCount} negative
             </span>
             {" · "}

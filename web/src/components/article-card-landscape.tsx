@@ -5,31 +5,25 @@ import { formatDistanceToNow, parseISO } from "date-fns";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  CategoryBadge,
   SentimentBadge,
   SubcategoryBadge,
-  categoryStripeClass,
-  subcategoryStripeClass,
+  stripeColor,
 } from "@/components/article-badges";
 import type { Article } from "@/lib/types";
 
 /**
- * Landscape card for Today's news (Landing + All News › Today tab).
+ * Landscape card untuk daftar berita (Landing + All News › Last 24h tab).
  *
- * Visual: 1.5px colored stripe on the left (color matches category),
- * full-width content next to it. Click card → /news/[id].
+ * Visual: stripe warna tipis di kiri (warna = subcategory). Subcategory badge
+ * sudah mengimplikasikan category, jadi category badge tidak ditampilkan di
+ * kartu (cukup di halaman detail) — mengurangi clutter, terutama di mobile.
  */
 export function ArticleCardLandscape({ article }: { article: Article }) {
   const relativeDate = formatDistanceToNow(parseISO(article.date), {
     addSuffix: true,
   });
 
-  // Stripe pakai subcategory (lebih granular); fallback ke category (lebih broad).
-  const stripe = article.subcategory
-    ? subcategoryStripeClass[article.subcategory]
-    : article.category
-      ? categoryStripeClass[article.category]
-      : "bg-slate-300";
+  const stripe = stripeColor(article.subcategory, article.category);
 
   const keywords = article.keywords
     ?.split(",")
@@ -44,22 +38,25 @@ export function ArticleCardLandscape({ article }: { article: Article }) {
     >
       <Card className="overflow-hidden transition-shadow group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring py-0 gap-0">
         <div className="flex">
-          {/* Thin colored stripe — visual category indicator */}
-          <div className={`w-1.5 shrink-0 ${stripe}`} aria-hidden />
+          {/* Stripe warna — indikator subcategory */}
+          <div
+            className="w-1.5 shrink-0"
+            style={{ backgroundColor: stripe }}
+            aria-hidden
+          />
 
           {/* Content */}
-          <div className="flex flex-1 flex-col gap-3 p-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <CategoryBadge value={article.category} />
+          <div className="flex flex-1 flex-col gap-2.5 p-4 sm:gap-3 sm:p-5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <SubcategoryBadge value={article.subcategory} />
               <SentimentBadge value={article.sentiment} />
               <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />
+                <Clock className="h-3 w-3 shrink-0" />
                 {relativeDate}
               </span>
             </div>
 
-            <h3 className="text-lg font-semibold leading-tight group-hover:text-primary">
+            <h3 className="text-base font-semibold leading-snug group-hover:text-primary sm:text-lg sm:leading-tight">
               {article.headline}
             </h3>
 
@@ -69,18 +66,20 @@ export function ArticleCardLandscape({ article }: { article: Article }) {
               </p>
             )}
 
-            <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+            <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
               {article.source && (
-                <span className="font-medium">{article.source}</span>
+                <span className="font-medium text-foreground/80">
+                  {article.source}
+                </span>
               )}
               {(article.city || article.province) && (
                 <span className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
+                  <MapPin className="h-3 w-3 shrink-0" />
                   {[article.city, article.province].filter(Boolean).join(", ")}
                 </span>
               )}
-              <span className="flex items-center gap-1">
-                <ExternalLink className="h-3 w-3" />
+              <span className="flex items-center gap-1 text-primary">
+                <ExternalLink className="h-3 w-3 shrink-0" />
                 View details
               </span>
             </div>

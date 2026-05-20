@@ -5,6 +5,7 @@ import { ArrowLeft, ThumbsUp, ThumbsDown, Minus, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SentimentBadge } from "@/components/article-badges";
+import { TEXT_TONE } from "@/lib/brand";
 
 export const metadata: Metadata = {
   title: "Sentiment Methodology",
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function SentimentMethodologyPage() {
   return (
-    <article className="mx-auto max-w-3xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
+    <article className="mx-auto max-w-3xl space-y-8 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
       <Link
         href="/"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -76,9 +77,9 @@ export default function SentimentMethodologyPage() {
         <h2 className="text-xl font-semibold">Classification rules</h2>
 
         <RuleCard
-          icon={<ThumbsUp className="h-5 w-5 text-emerald-600" />}
+          Icon={ThumbsUp}
           label="Positive"
-          tone="emerald"
+          color={TEXT_TONE.positive}
           rules={[
             "New partnerships, MoUs, or collaborations involving AZ",
             "Drug approvals, registrations, or formulary inclusions for AZ products",
@@ -90,9 +91,9 @@ export default function SentimentMethodologyPage() {
         />
 
         <RuleCard
-          icon={<Minus className="h-5 w-5 text-slate-600" />}
+          Icon={Minus}
           label="Neutral"
-          tone="slate"
+          color={TEXT_TONE.neutral}
           rules={[
             "Factual updates without clear positive or negative framing",
             "Industry/market reports mentioning AZ as a data point",
@@ -103,9 +104,9 @@ export default function SentimentMethodologyPage() {
         />
 
         <RuleCard
-          icon={<ThumbsDown className="h-5 w-5 text-rose-600" />}
+          Icon={ThumbsDown}
           label="Negative"
-          tone="rose"
+          color={TEXT_TONE.negative}
           rules={[
             "Trial failures, product recalls, or efficacy concerns for AZ",
             "Controversies, hoaxes, or public criticism toward AZ",
@@ -169,29 +170,27 @@ export default function SentimentMethodologyPage() {
 }
 
 function RuleCard({
-  icon,
+  Icon,
   label,
-  tone,
+  color,
   rules,
   example,
 }: {
-  icon: React.ReactNode;
+  Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   label: string;
-  tone: "emerald" | "slate" | "rose";
+  /** Hex brand color untuk border + icon */
+  color: string;
   rules: string[];
   example: string;
 }) {
-  const borderClass = {
-    emerald: "border-l-emerald-500",
-    slate: "border-l-slate-400",
-    rose: "border-l-rose-500",
-  }[tone];
-
   return (
-    <Card className={`overflow-hidden border-l-4 ${borderClass}`}>
+    <Card
+      className="overflow-hidden border-l-4"
+      style={{ borderLeftColor: color }}
+    >
       <CardContent className="space-y-3 p-5">
         <div className="flex items-center gap-2 font-semibold">
-          {icon}
+          <Icon className="h-5 w-5" style={{ color }} />
           {label}
         </div>
         <ul className="space-y-1 text-sm text-muted-foreground">
