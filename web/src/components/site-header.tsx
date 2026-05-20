@@ -17,9 +17,9 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
-          <Newspaper className="h-5 w-5 shrink-0" style={{ color: "var(--brand-mulberry)" }} />
+          {/* <Newspaper className="h-5 w-5 shrink-0" style={{ color: "var(--brand-mulberry)" }} /> */}
           {/* Teks penuh di >=sm, ringkas di mobile supaya nav muat */}
-          <span className="hidden sm:inline">AZ Media Monitor</span>
+          <span className="hidden sm:inline text-xl text-[#830051]">AZ Media Monitor</span>
           <span className="sm:hidden">AZ Monitor</span>
         </Link>
         <nav className="flex items-center gap-0.5 sm:gap-1">

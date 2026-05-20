@@ -2,7 +2,7 @@ import Link from "next/link";
 import { TrendingUp, TrendingDown, Minus, Newspaper, Smile, Target } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { TEXT_TONE, netSentimentColor } from "@/lib/brand";
+import { BRAND, TEXT_TONE, netSentimentColor } from "@/lib/brand";
 import { articleRepo } from "@/lib/repositories";
 import type { AllTimeKpi, ArticleListFilters, DailyKpi } from "@/lib/types";
 
@@ -30,6 +30,7 @@ export async function TodayKpiCards() {
         icon={<Newspaper className="h-4 w-4" />}
         label="Total News"
         value={kpi.total.toLocaleString("en-US")}
+        valueColor={BRAND.darkMulberry}
         footer={
           <div className="space-y-1">
             <DeltaBadge value={kpi.totalLast24h} unit="last 24h" />
@@ -54,6 +55,7 @@ export async function TodayKpiCards() {
         icon={<Target className="h-4 w-4" />}
         label="About AstraZeneca"
         value={kpi.azRelatedTotal}
+        valueColor={BRAND.darkMulberry}
         footer={
           <div className="space-y-1">
             <AzBreakdown kpi={kpi} />
@@ -83,6 +85,7 @@ export async function FilteredKpiCards({
         icon={<Newspaper className="h-4 w-4" />}
         label="Total News"
         value={kpi.total.toLocaleString("en-US")}
+        valueColor={BRAND.darkMulberry}
         footer={
           <div className="space-y-1">
             <DeltaBadge value={kpiToday.totalLast24h} unit="last 24h" />
@@ -102,6 +105,7 @@ export async function FilteredKpiCards({
         icon={<Target className="h-4 w-4" />}
         label="About AstraZeneca"
         value={kpi.azRelatedTotal}
+        valueColor={BRAND.darkMulberry}
         footer={<AzBreakdown kpi={kpi} />}
       />
     </section>
@@ -118,6 +122,7 @@ export async function AllTimeKpiCards() {
         icon={<Newspaper className="h-4 w-4" />}
         label="Total News"
         value={kpi.total.toLocaleString("en-US")}
+        valueColor={BRAND.darkMulberry}
         footer={<SentimentBreakdown kpi={kpi} />}
       />
       <KpiCard
@@ -133,6 +138,7 @@ export async function AllTimeKpiCards() {
         icon={<Target className="h-4 w-4" />}
         label="About AstraZeneca"
         value={kpi.azRelatedTotal}
+        valueColor={BRAND.darkMulberry}
         footer={<AzBreakdown kpi={kpi} />}
       />
     </section>

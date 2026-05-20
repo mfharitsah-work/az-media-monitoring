@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import {
@@ -36,17 +36,28 @@ const SENTIMENT_OPTIONS = [
   { value: "Negative", label: "Negative" },
 ] as const;
 
+/** Param yang dianggap "filter" (range tab tidak termasuk — itu periode). */
+const FILTER_KEYS = ["q", "category", "subcategory", "sentiment", "date"] as const;
+
 /**
- * Filter bar for All News page. State fully in URL searchParams so the
- * page is the source of truth and links are shareable.
+ * Filter bar untuk All News page. State sepenuhnya di URL searchParams.
  *
- * Pattern: each input change → router.replace with new params. Server
- * Component re-renders with new data. useTransition keeps UI responsive.
+ * Inputs CONTROLLED (value dari searchParams) supaya tombol "Clear filters"
+ * benar-benar mereset tampilan input — bukan cuma URL. Search pakai local
+ * state agar ketikan responsif, di-sync balik dari URL saat navigasi
+ * eksternal (mis. klik Clear).
  */
 export function NewsFilters() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
+
+  const [q, setQ] = useState(searchParams.get("q") ?? "");
+
+  // Sync search box saat URL berubah dari luar (Clear filters / back button).
+  useEffect(() => {
+    setQ(searchParams.get("q") ?? "");
+  }, [searchParams]);
 
   const setParam = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -55,93 +66,123 @@ export function NewsFilters() {
     } else {
       params.set(key, value);
     }
-    // Reset offset whenever filters change
-    if (key !== "offset") params.delete("offset");
+    params.delete("page"); // reset pagination saat filter berubah
     startTransition(() => {
       router.replace(`?${params.toString()}`, { scroll: false });
     });
   };
 
+  const clearFilters = () => {
+    // Buang semua filter, pertahankan tab range (periode bukan filter).
+    const params = new URLSearchParams();
+    const range = searchParams.get("range");
+    if (range) params.set("range", range);
+    setQ("");
+    startTransition(() => {
+      router.replace(params.toString() ? `?${params.toString()}` : "?", {
+        scroll: false,
+      });
+    });
+  };
+
+  const hasActiveFilters = FILTER_KEYS.some((k) => !!searchParams.get(k));
+
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto]">
-      <FilterField label="Search" htmlFor="news-search">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto]">
+        <FilterField label="Search" htmlFor="news-search">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="news-search"
+              type="search"
+              placeholder="Headline, summary, or keyword..."
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setParam("q", e.target.value);
+              }}
+              className="pl-9"
+            />
+          </div>
+        </FilterField>
+
+        <FilterField label="Category">
+          <Select
+            value={searchParams.get("category") ?? "all"}
+            onValueChange={(v) => setParam("category", v)}
+          >
+            <SelectTrigger className="w-full lg:w-[190px]">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORY_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
+
+        <FilterField label="Subcategory">
+          <Select
+            value={searchParams.get("subcategory") ?? "all"}
+            onValueChange={(v) => setParam("subcategory", v)}
+          >
+            <SelectTrigger className="w-full lg:w-[210px]">
+              <SelectValue placeholder="Subcategory" />
+            </SelectTrigger>
+            <SelectContent>
+              {SUBCATEGORY_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
+
+        <FilterField label="Sentiment">
+          <Select
+            value={searchParams.get("sentiment") ?? "all"}
+            onValueChange={(v) => setParam("sentiment", v)}
+          >
+            <SelectTrigger className="w-full lg:w-[150px]">
+              <SelectValue placeholder="Sentiment" />
+            </SelectTrigger>
+            <SelectContent>
+              {SENTIMENT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
+
+        <FilterField label="Date" htmlFor="news-date">
           <Input
-            id="news-search"
-            type="search"
-            placeholder="Headline, summary, or keyword..."
-            defaultValue={searchParams.get("q") ?? ""}
-            onChange={(e) => setParam("q", e.target.value)}
-            className="pl-9"
+            id="news-date"
+            type="date"
+            value={searchParams.get("date") ?? ""}
+            onChange={(e) => setParam("date", e.target.value)}
+            className="w-full lg:w-[160px]"
+            title="Specific date — overrides range tab when set"
           />
-        </div>
-      </FilterField>
+        </FilterField>
+      </div>
 
-      <FilterField label="Category">
-        <Select
-          defaultValue={searchParams.get("category") ?? "all"}
-          onValueChange={(v) => setParam("category", v)}
+      {hasActiveFilters && (
+        <button
+          type="button"
+          onClick={clearFilters}
+          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
-          <SelectTrigger className="w-full lg:w-[190px]">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            {CATEGORY_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Subcategory">
-        <Select
-          defaultValue={searchParams.get("subcategory") ?? "all"}
-          onValueChange={(v) => setParam("subcategory", v)}
-        >
-          <SelectTrigger className="w-full lg:w-[210px]">
-            <SelectValue placeholder="Subcategory" />
-          </SelectTrigger>
-          <SelectContent>
-            {SUBCATEGORY_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Sentiment">
-        <Select
-          defaultValue={searchParams.get("sentiment") ?? "all"}
-          onValueChange={(v) => setParam("sentiment", v)}
-        >
-          <SelectTrigger className="w-full lg:w-[150px]">
-            <SelectValue placeholder="Sentiment" />
-          </SelectTrigger>
-          <SelectContent>
-            {SENTIMENT_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Date" htmlFor="news-date">
-        <Input
-          id="news-date"
-          type="date"
-          defaultValue={searchParams.get("date") ?? ""}
-          onChange={(e) => setParam("date", e.target.value)}
-          className="w-full lg:w-[160px]"
-          title="Specific date — overrides range tab when set"
-        />
-      </FilterField>
+          <X className="h-3.5 w-3.5" />
+          Clear filters
+        </button>
+      )}
     </div>
   );
 }

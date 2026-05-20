@@ -53,7 +53,7 @@ export default async function NewsPage({
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">All News</h1>
+        <h1 className="text-3xl text-[#4D0030] font-bold tracking-tight">All News</h1>
         <p className="text-muted-foreground">
           Filter by date, category, or sentiment — or search keywords across articles.
         </p>

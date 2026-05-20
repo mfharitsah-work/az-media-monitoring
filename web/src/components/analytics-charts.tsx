@@ -14,8 +14,8 @@ import {
 } from "recharts";
 import { CHART } from "@/lib/brand";
 import type {
-  CategoryBreakdown,
   SentimentTrendPoint,
+  SubcategoryBreakdown,
   TopProvince,
   TopSource,
 } from "@/lib/types";
@@ -31,7 +31,7 @@ const COLORS = {
   positive: CHART.positive,
   neutral: CHART.neutral,
   negative: CHART.negative,
-  categoryPalette: CHART.byCategory,
+  subcategoryPalette: CHART.bySubcategory,
 };
 
 export function SentimentTrendChart({ data }: { data: SentimentTrendPoint[] }) {
@@ -72,23 +72,34 @@ export function SentimentTrendChart({ data }: { data: SentimentTrendPoint[] }) {
   );
 }
 
-export function CategoryBreakdownChart({ data }: { data: CategoryBreakdown[] }) {
+export function SubcategoryBreakdownChart({
+  data,
+}: {
+  data: SubcategoryBreakdown[];
+}) {
   if (data.length === 0) {
-    return <EmptyState message="No category data yet." />;
+    return <EmptyState message="No subcategory data yet." />;
   }
-  // Recharts auto-picks `fill` from each data item — no need for deprecated <Cell>.
+  // Recharts auto-picks `fill` dari tiap data item — tidak perlu <Cell> (deprecated).
   const colored = data.map((d) => ({
     ...d,
     fill:
-    COLORS.categoryPalette[
-      d.category as keyof typeof COLORS.categoryPalette
-    ] ?? "#94a3b8", // default to slate-400 if category not in palette
+      COLORS.subcategoryPalette[
+        d.subcategory as keyof typeof COLORS.subcategoryPalette
+      ] ?? "#94a3b8",
   }));
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <BarChart data={colored} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={colored} margin={{ top: 5, right: 20, left: -10, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-        <XAxis dataKey="category" tick={{ fontSize: 12 }} />
+        <XAxis
+          dataKey="subcategory"
+          tick={{ fontSize: 11 }}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+          height={70}
+        />
         <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
         <Tooltip />
         <Bar dataKey="count" radius={[6, 6, 0, 0]} />

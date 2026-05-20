@@ -93,10 +93,13 @@ export interface SentimentTrendPoint {
   negative: number;
 }
 
-export interface CategoryBreakdown {
-  category: ArticleCategory;
+export interface SubcategoryBreakdown {
+  subcategory: ArticleSubcategory;
   count: number;
 }
+
+/** Rentang waktu untuk halaman Analytics. */
+export type AnalyticsRange = "last-7-days" | "all-time";
 
 export interface TopSource {
   source: string;

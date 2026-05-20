@@ -1,72 +1,95 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  CategoryBreakdownChart,
   SentimentTrendChart,
+  SubcategoryBreakdownChart,
   TopProvincesChart,
   TopSourcesChart,
 } from "@/components/analytics-charts";
 import { articleRepo } from "@/lib/repositories";
+import type { AnalyticsRange } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "Analytics",
-  description: "Sentiment trend, category, source, and location analytics for AstraZeneca Indonesia news.",
+  description:
+    "Sentiment trend, subcategory, source, and location analytics for AstraZeneca Indonesia news.",
 };
 
 export const revalidate = 3600;
 
-const TREND_DAYS = 14;
-const BREAKDOWN_DAYS = 7;
 const TOP_LIMIT = 10;
 
-export default function AnalyticsPage() {
+const RANGE_TABS: { value: AnalyticsRange; label: string }[] = [
+  { value: "last-7-days", label: "Last 7 days" },
+  { value: "all-time", label: "All Time" },
+];
+
+function rangeLabel(range: AnalyticsRange): string {
+  return range === "all-time" ? "all time" : "last 7 days";
+}
+
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
+  const sp = await searchParams;
+  const range: AnalyticsRange = sp.range === "all-time" ? "all-time" : "last-7-days";
+  const label = rangeLabel(range);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
-        <p className="text-muted-foreground">
-          Trend and distribution visualizations for AstraZeneca Indonesia media monitoring.
-        </p>
+      <header className="space-y-3">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
+          <p className="text-muted-foreground">
+            Trend and distribution visualizations for AstraZeneca Indonesia media
+            monitoring.
+          </p>
+        </div>
+        <AnalyticsRangeTabs activeRange={range} />
       </header>
 
-      {/* Each chart streams independently — a slow query won't block the others. */}
+      {/* Tiap chart streaming independen — query lambat tidak block yang lain.
+          `key` di-set per range supaya Suspense re-trigger saat range ganti. */}
       <div className="grid gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Sentiment Trend (last 14 days)"
+          title={`Sentiment Trend (${label})`}
           description="Article count per sentiment per day"
         >
-          <Suspense fallback={<ChartSkeleton />}>
-            <SentimentTrendSection />
+          <Suspense key={`trend-${range}`} fallback={<ChartSkeleton />}>
+            <SentimentTrendSection range={range} />
           </Suspense>
         </ChartCard>
 
         <ChartCard
-          title="Categories (last 7 days)"
-          description="Article distribution by category"
+          title={`Subcategories (${label})`}
+          description="Article distribution by subcategory"
         >
-          <Suspense fallback={<ChartSkeleton />}>
-            <CategoryBreakdownSection />
+          <Suspense key={`sub-${range}`} fallback={<ChartSkeleton />}>
+            <SubcategoryBreakdownSection range={range} />
           </Suspense>
         </ChartCard>
 
         <ChartCard
-          title={`Top ${TOP_LIMIT} Sources (last 7 days)`}
+          title={`Top ${TOP_LIMIT} Sources (${label})`}
           description="Publications that produced the most articles"
         >
-          <Suspense fallback={<ChartSkeleton />}>
-            <TopSourcesSection />
+          <Suspense key={`src-${range}`} fallback={<ChartSkeleton />}>
+            <TopSourcesSection range={range} />
           </Suspense>
         </ChartCard>
 
         <ChartCard
-          title={`Top ${TOP_LIMIT} Provinces (last 7 days)`}
+          title={`Top ${TOP_LIMIT} Provinces (${label})`}
           description="Provinces most often referenced as the article location"
         >
-          <Suspense fallback={<ChartSkeleton />}>
-            <TopProvincesSection />
+          <Suspense key={`prov-${range}`} fallback={<ChartSkeleton />}>
+            <TopProvincesSection range={range} />
           </Suspense>
         </ChartCard>
       </div>
@@ -78,29 +101,53 @@ export default function AnalyticsPage() {
 // Server data-fetching sections (1 per chart for streaming)
 // =============================================================================
 
-async function SentimentTrendSection() {
-  const data = await articleRepo.sentimentTrend(TREND_DAYS);
+async function SentimentTrendSection({ range }: { range: AnalyticsRange }) {
+  const data = await articleRepo.sentimentTrend(range);
   return <SentimentTrendChart data={data} />;
 }
 
-async function CategoryBreakdownSection() {
-  const data = await articleRepo.categoryBreakdown(BREAKDOWN_DAYS);
-  return <CategoryBreakdownChart data={data} />;
+async function SubcategoryBreakdownSection({ range }: { range: AnalyticsRange }) {
+  const data = await articleRepo.subcategoryBreakdown(range);
+  return <SubcategoryBreakdownChart data={data} />;
 }
 
-async function TopSourcesSection() {
-  const data = await articleRepo.topSources(BREAKDOWN_DAYS, TOP_LIMIT);
+async function TopSourcesSection({ range }: { range: AnalyticsRange }) {
+  const data = await articleRepo.topSources(range, TOP_LIMIT);
   return <TopSourcesChart data={data} />;
 }
 
-async function TopProvincesSection() {
-  const data = await articleRepo.topProvinces(BREAKDOWN_DAYS, TOP_LIMIT);
+async function TopProvincesSection({ range }: { range: AnalyticsRange }) {
+  const data = await articleRepo.topProvinces(range, TOP_LIMIT);
   return <TopProvincesChart data={data} />;
 }
 
 // =============================================================================
 // UI primitives
 // =============================================================================
+
+/** Range selector — pure Link, SSR-friendly. Mengatur semua chart sekaligus. */
+function AnalyticsRangeTabs({ activeRange }: { activeRange: AnalyticsRange }) {
+  return (
+    <div className="inline-flex rounded-md border bg-muted p-1">
+      {RANGE_TABS.map((tab) => {
+        const isActive = activeRange === tab.value;
+        return (
+          <Link
+            key={tab.value}
+            href={`?range=${tab.value}`}
+            className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+              isActive
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
 
 function ChartCard({
   title,

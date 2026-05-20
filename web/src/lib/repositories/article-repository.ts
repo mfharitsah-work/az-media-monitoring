@@ -1,10 +1,11 @@
 import type {
   AllTimeKpi,
+  AnalyticsRange,
   Article,
   ArticleListFilters,
-  CategoryBreakdown,
   DailyKpi,
   SentimentTrendPoint,
+  SubcategoryBreakdown,
   TopProvince,
   TopSource,
 } from "@/lib/types";
@@ -55,15 +56,15 @@ export interface ArticleRepository {
    */
   filteredKpi(filters: ArticleListFilters): Promise<AllTimeKpi>;
 
-  /** Sentiment trend per hari, untuk N hari ke belakang */
-  sentimentTrend(days: number): Promise<SentimentTrendPoint[]>;
+  /** Sentiment trend per hari untuk rentang yang dipilih */
+  sentimentTrend(range: AnalyticsRange): Promise<SentimentTrendPoint[]>;
 
-  /** Breakdown jumlah artikel per category */
-  categoryBreakdown(days: number): Promise<CategoryBreakdown[]>;
+  /** Breakdown jumlah artikel per subcategory */
+  subcategoryBreakdown(range: AnalyticsRange): Promise<SubcategoryBreakdown[]>;
 
   /** Top N publikasi by artikel count */
-  topSources(days: number, limit: number): Promise<TopSource[]>;
+  topSources(range: AnalyticsRange, limit: number): Promise<TopSource[]>;
 
   /** Top N provinsi by artikel count */
-  topProvinces(days: number, limit: number): Promise<TopProvince[]>;
+  topProvinces(range: AnalyticsRange, limit: number): Promise<TopProvince[]>;
 }
