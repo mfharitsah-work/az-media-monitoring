@@ -127,14 +127,56 @@ DEFAULT_OUTPUT = "astrazeneca_news.csv"
 # Kalau di masa depan ada subscription/API key, tambah domain di sini + handle
 # auth header di fetch_article_text (mungkin perlu cookie jar atau bearer token).
 SOURCE_WHITELIST = {
-    "kompas.com",       # umum + health (versi free)
-    "thejakartapost.com",
+    # --- General news / wire services ---
+    "kompas.com",          # umum + health (versi free)
+    "kompas.tv",
+    "detik.com",           # covers detiknews + health.detik.com + news.detik.com
+    "tribunnews.com",      # covers regional: jateng/jabar/sumsel/medan/makassar/manado/pontianak/kupang/ambon/papua/bangka.tribunnews.com
     "antaranews.com",
-    "tribunnews.com",
-    "detik.com",        # covers detiknews + health.detik.com + news.detik.com
-    "metrotvnews.com",
+    "liputan6.com",
+    "kumparan.com",
     "tempo.co",
+    "merdeka.com",
+    "republika.co.id",
+    "okezone.com",
+    "sindonews.com",
+    "inews.id",
+    "viva.co.id",
+    "jpnn.com",
+    "suara.com",
+    "idntimes.com",
+    "idnnews.id",
+    "tirto.id",
+    "jawapos.com",
+    "pikiran-rakyat.com",
+    "mediaindonesia.com",
+    "metrotvnews.com",
+    "beritasatu.com",
+    "narasi.tv",
+    "rri.co.id",
+    "tvonenews.com",
+    "thejakartapost.com",
+
+    # --- Business / market / political-economy ---
+    "kontan.co.id",
+    "bisnis.com",
     "cnbcindonesia.com",
+    "cnnindonesia.com",
+    "katadata.co.id",
+    "investor.id",
+    "swa.co.id",
+    "wartaekonomi.co.id",
+
+    # --- Health, parenting & lifestyle (relevant untuk health regulation coverage) ---
+    "hellosehat.com",
+    "haibunda.com",
+    "theasianparent.com",  # id.theasianparent.com — subdomain match
+    "popmama.com",
+    "orami.co.id",
+    "femina.co.id",
+    "popbela.com",
+    "sehatq.com",
+    "grid.id",             # covers nakita.grid.id + health.grid.id (GridHealth)
 }
 
 # Title patterns yang menandakan entry RSS rusak (image filename, dll.) — skip.
