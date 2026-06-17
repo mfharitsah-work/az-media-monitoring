@@ -762,6 +762,11 @@ class GroqClient:
         Smart retry: parse pesan error Groq yang ngasih tahu waktu retry tepat
         ("Please try again in 2.9175s"). Lebih reliable daripada fixed sleep.
         Fallback ke exponential backoff kalau parsing gagal.
+
+        Raises:
+            TPDLimitExceeded: kalau Groq response menandakan TPD (tokens-per-day)
+                terlampaui. Caller harus stop scrape dan save partial — retry sia-sia
+                karena reset window 20+ menit dan total quota habis hari itu.
         """
         attempt = 0
         while True:
@@ -775,6 +780,10 @@ class GroqClient:
             except requests.HTTPError as e:
                 status = e.response.status_code
                 err_body = e.response.text if e.response is not None else ""
+                # Distinguish TPD (daily) vs TPM (per-minute). TPD = hard stop,
+                # tidak ada gunanya retry; signal caller untuk graceful exit.
+                if status == 429 and "tokens per day" in err_body.lower():
+                    raise TPDLimitExceeded(err_body[:300])
                 if status == 429 and attempt < max_retries:
                     attempt += 1
                     wait = _parse_retry_after(err_body, fallback=min(60, 5 * 2 ** attempt))
@@ -787,6 +796,15 @@ class GroqClient:
             except Exception as e:
                 print(f"    ! Groq call failed: {e}", file=sys.stderr)
                 return None
+
+
+class TPDLimitExceeded(Exception):
+    """Groq daily token budget exhausted. Pipeline should save partial + exit graceful.
+
+    Raised dari `GroqClient._post_with_retry` saat response 429 menyebut
+    "tokens per day (TPD)" — beda dari TPM yang bisa di-retry dalam detik.
+    """
+    pass
 
 
 _RETRY_AFTER_RE = re.compile(r"try again in ([0-9]+(?:\.[0-9]+)?)(ms|s)")
@@ -925,31 +943,60 @@ def process_article(entry, fetch_body: bool, groq: GroqClient | None) -> dict | 
 
 
 def fetch_news(keywords: list[str], hours: int, fetch_body: bool,
-               groq: GroqClient | None) -> list[dict]:
+               groq: GroqClient | None, max_per_keyword: int = 5) -> list[dict]:
+    """Iterate semua keyword (sudah priority-ordered di DEFAULT_KEYWORDS:
+    AZ → Regulatory → Industry → Crisis), process artikel, return list.
+
+    `max_per_keyword` — cap artikel ter-save per keyword. Lindungi dari burst
+    news (mis. 1 keyword "gempa AND rumah sakit" return 20 artikel mirip).
+    Hitung berdasarkan artikel yang berhasil masuk all_articles (bukan
+    LM-calls) — sederhana & predictable untuk coverage di BQ.
+
+    TPDLimitExceeded — Groq quota habis hari itu. Pipeline save partial dan
+    exit graceful. Sisa keyword tidak diproses (sudah ke-skip duluan oleh
+    priority ordering: AZ + Regulatory diproses di awal saat quota masih ada).
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     all_articles: list[dict] = []
     seen_urls: set[str] = set()
 
-    for kw in keywords:
-        query = quote_plus(f"{kw} when:{hours}h")
-        rss_url = GOOGLE_NEWS_RSS.format(query=query)
-        print(f"[*] Fetching RSS for keyword: {kw}", file=sys.stderr)
-        feed = feedparser.parse(rss_url)
+    try:
+        for kw in keywords:
+            query = quote_plus(f"{kw} when:{hours}h")
+            rss_url = GOOGLE_NEWS_RSS.format(query=query)
+            print(f"[*] Fetching RSS for keyword: {kw}", file=sys.stderr)
+            feed = feedparser.parse(rss_url)
 
-        for entry in feed.entries:
-            if entry.link in seen_urls:
-                continue
-            seen_urls.add(entry.link)
-            try:
-                pub_dt = date_parser.parse(entry.published).astimezone(timezone.utc)
-                if pub_dt < cutoff:
+            saved_for_kw = 0
+            for entry in feed.entries:
+                if saved_for_kw >= max_per_keyword:
+                    print(f"    [cap reached] {max_per_keyword} artikel saved untuk '{kw}',"
+                          f" lanjut keyword berikutnya", file=sys.stderr)
+                    break
+
+                if entry.link in seen_urls:
                     continue
-            except Exception:
-                pass
+                seen_urls.add(entry.link)
+                try:
+                    pub_dt = date_parser.parse(entry.published).astimezone(timezone.utc)
+                    if pub_dt < cutoff:
+                        continue
+                except Exception:
+                    pass
 
-            article = process_article(entry, fetch_body, groq)
-            if article:
-                all_articles.append(article)
+                article = process_article(entry, fetch_body, groq)
+                if article:
+                    all_articles.append(article)
+                    saved_for_kw += 1
+    except TPDLimitExceeded as e:
+        # Groq daily quota habis — keluar dari semua loop, save apa yang
+        # sudah ada. Pipeline (main) tetap save_json + save_csv + exit 0.
+        # Acceptable degradation: scrape harian belum lengkap tapi data
+        # tersimpan + kualitas tidak compromise.
+        print(f"\n[!] TPD limit reached — stopping scrape early.", file=sys.stderr)
+        print(f"    {len(all_articles)} artikel sudah ke-collect, lanjut save partial.",
+              file=sys.stderr)
+        print(f"    Groq msg: {str(e)[:200]}", file=sys.stderr)
 
     return all_articles
 
@@ -1016,6 +1063,10 @@ def main() -> None:
     p.add_argument("--no-fetch-body", action="store_true")
     p.add_argument("--use-groq", action="store_true",
                    help="Use Groq Cloud LM (requires GROQ_API_KEY env var)")
+    p.add_argument("--max-per-keyword", type=int, default=5,
+                   help="Cap artikel ter-save per keyword (anti-burst guard). "
+                        "Default 5. Naikkan kalau quota lega + ingin coverage "
+                        "lebih luas; turunkan kalau quota mepet.")
     args = p.parse_args()
 
     groq = None
@@ -1036,11 +1087,15 @@ def main() -> None:
                 print(f"[*] Groq enabled: {groq.model}", file=sys.stderr)
 
     keywords = [k.strip() for k in args.keywords.split(",") if k.strip()]
+    print(f"[*] Processing {len(keywords)} keywords (priority-ordered: "
+          f"AZ → Regulatory → Industry → Crisis), cap={args.max_per_keyword}/keyword",
+          file=sys.stderr)
     articles = fetch_news(
         keywords=keywords,
         hours=args.hours,
         fetch_body=not args.no_fetch_body,
         groq=groq,
+        max_per_keyword=args.max_per_keyword,
     )
 
     articles.sort(key=lambda a: (

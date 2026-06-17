@@ -12,6 +12,10 @@ on:
         description: "Window jam ke belakang"
         default: "24"
         required: false
+      max_per_keyword:
+        description: "Cap artikel per keyword (anti-burst guard). 5 = aman quota, 10 = coverage lebih luas"
+        default: "5"
+        required: false
 
 permissions:
   contents: read
@@ -48,10 +52,18 @@ jobs:
       - name: Run scraper (fetch + LM analysis + ID/EN translation)
         # fetch_news.py sekarang produce dual-language output (Indonesian + English)
         # dalam SATU Groq call per artikel. Tidak perlu step translate terpisah.
+        #
+        # --max-per-keyword: cap artikel per keyword (anti-burst guard) — burst news
+        # seperti gempa Palu bisa menghasilkan 20+ artikel mirip via 1 keyword. Cap=5
+        # default. Bisa override dari workflow_dispatch input.
+        #
+        # fetch_news.py exit code 0 walau TPD limit hit di tengah — handle graceful:
+        # save partial JSON, downstream tetap load apa adanya.
         run: |
           python fetch_news.py \
             --use-groq \
             --hours "${{ github.event.inputs.hours || '24' }}" \
+            --max-per-keyword "${{ github.event.inputs.max_per_keyword || '5' }}" \
             --output news.csv
 
       - name: Load to BigQuery
