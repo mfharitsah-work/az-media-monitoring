@@ -36,3 +36,8 @@ build/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Runtime scrape outputs
+news.csv
+news.json
+competitor_news.json
