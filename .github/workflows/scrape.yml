@@ -7,7 +7,7 @@ name: Daily News Scrape & Load
 # Bisa juga di-trigger manual lewat tab Actions di GitHub.
 on:
   schedule:
-    - cron: "55 6 * * *"
+    - cron: "55 7 * * *"
   workflow_dispatch:  # manual trigger
     inputs:
       hours:
