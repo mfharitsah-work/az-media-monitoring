@@ -1,11 +1,13 @@
 name: Daily News Scrape & Load
 
-# Schedule: setiap hari 08:00 WIB = 01:00 UTC.
+# Schedule: setiap hari 08:17 WIB = 01:17 UTC.
+# Menit 17 dipilih supaya tidak tepat di awal jam, karena GitHub Actions
+# scheduled workflow lebih rawan delay/drop saat load tinggi di menit 00.
 # Window scrape: rolling 24 jam ke belakang dari waktu run (lihat --hours below).
 # Bisa juga di-trigger manual lewat tab Actions di GitHub.
 on:
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "31 3 * * *"
   workflow_dispatch:  # manual trigger
     inputs:
       hours:
