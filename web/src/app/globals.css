@@ -159,6 +159,10 @@
   font-size: inherit;
 }
 
+.news-date-range-calendar .rdp-months {
+  margin-inline: auto;
+}
+
 .news-date-range-calendar .rdp-day_button {
   transition: background-color 120ms ease, color 120ms ease;
 }
