@@ -33,8 +33,9 @@ const PAGE_SIZE_BY_RANGE: Record<DateRange, number> = {
 
 /**
  * Search params (URL state):
- * - range:     "last-24h" | "last-7-days" | "all-time" | (custom kalau ada `date`)
- * - date:      YYYY-MM-DD; kalau diisi, override range → custom
+ * - range:     "last-24h" | "last-7-days" | "all-time"
+ * - from/to:   inclusive YYYY-MM-DD bounds; override range → custom
+ * - date:      legacy single-date param; treated as from = to
  * - q:         free text search
  * - category:  enum
  * - sentiment: enum
@@ -49,7 +50,7 @@ export default async function NewsPage({
   const { filters, page, pageSize } = parseParams(sp);
   // Landscape layout dipakai untuk window kecil (last-24h); gallery untuk yg lebih besar.
   const isCompactWindow = filters.range === "last-24h";
-  const activeRangeTab = sp.date ? "custom" : filters.range;
+  const activeRangeTab = filters.range;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
@@ -72,7 +73,7 @@ export default async function NewsPage({
         <NewsFilters />
       </div>
 
-      {filters.range === "last-24h" && !sp.date && (
+      {filters.range === "last-24h" && (
         <Suspense fallback={null}>
           <EmailDigestLauncher />
         </Suspense>
@@ -99,12 +100,22 @@ function parseParams(sp: Record<string, string | undefined>): {
   page: number;
   pageSize: number;
 } {
-  // Date input override range → custom. Default: rolling last-24h.
+  // Custom date bounds override the preset range. Default: rolling last-24h.
   let range: DateRange = "last-24h";
-  let customDate: string | undefined;
-  if (sp.date) {
+  let customDateFrom: string | undefined;
+  let customDateTo: string | undefined;
+  const legacyDate = validIsoDate(sp.date);
+  const requestedFrom = validIsoDate(sp.from);
+  const requestedTo = validIsoDate(sp.to);
+  const firstBound = requestedFrom ?? requestedTo ?? legacyDate;
+  const secondBound = requestedTo ?? requestedFrom ?? legacyDate;
+
+  if (firstBound && secondBound) {
     range = "custom";
-    customDate = sp.date;
+    customDateFrom =
+      firstBound <= secondBound ? firstBound : secondBound;
+    customDateTo =
+      firstBound <= secondBound ? secondBound : firstBound;
   } else if (sp.range === "last-7-days") {
     range = "last-7-days";
   } else if (sp.range === "all-time") {
@@ -127,7 +138,8 @@ function parseParams(sp: Record<string, string | undefined>): {
   return {
     filters: {
       range,
-      customDate,
+      customDateFrom,
+      customDateTo,
       q: sp.q || undefined,
       categories: parsedCategory ? [parsedCategory] : undefined,
       subcategories: parsedSubcategory ? [parsedSubcategory] : undefined,
@@ -138,6 +150,21 @@ function parseParams(sp: Record<string, string | undefined>): {
     page,
     pageSize,
   };
+}
+
+function validIsoDate(value: string | undefined): string | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return value;
 }
 
 async function ResultList({
@@ -212,4 +239,3 @@ function GallerySkeleton() {
     </div>
   );
 }
-

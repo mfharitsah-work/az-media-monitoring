@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "react-day-picker/style.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -140,4 +141,38 @@
   html {
     @apply font-sans;
   }
+}
+
+.news-date-range-calendar {
+  --rdp-accent-color: var(--brand-mulberry);
+  --rdp-accent-background-color: #f5eaf0;
+  --rdp-day-height: 2.25rem;
+  --rdp-day-width: 2.25rem;
+  --rdp-day_button-height: 2rem;
+  --rdp-day_button-width: 2rem;
+  --rdp-selected-border: 0;
+  --rdp-today-color: var(--brand-magenta);
+  font-size: 0.875rem;
+}
+
+.news-date-range-calendar .rdp-selected {
+  font-size: inherit;
+}
+
+.news-date-range-calendar .rdp-day_button {
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.news-date-range-calendar
+  .rdp-day:not(.rdp-range_start):not(.rdp-range_middle):not(.rdp-range_end)
+  .rdp-day_button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.news-date-range-calendar .rdp-day_button:focus-visible,
+.news-date-range-calendar .rdp-button_previous:focus-visible,
+.news-date-range-calendar .rdp-button_next:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }

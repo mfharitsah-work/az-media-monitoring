@@ -113,8 +113,9 @@ export type DateRange =
 
 export interface ArticleListFilters {
   range: DateRange;
-  /** ISO date (YYYY-MM-DD) — only used when range = "custom" */
-  customDate?: string;
+  /** Inclusive ISO date bounds (YYYY-MM-DD), used when range = "custom". */
+  customDateFrom?: string;
+  customDateTo?: string;
   /** Free-text search across headline + summary + keywords */
   q?: string;
   /** Match any of these categories (IN clause). Empty/undefined = all. */

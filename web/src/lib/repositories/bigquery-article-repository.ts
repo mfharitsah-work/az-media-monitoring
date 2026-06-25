@@ -195,7 +195,8 @@ function inListRange(
   a: Article,
   range: DateRange,
   anchorMs: number,
-  customDate?: string,
+  customDateFrom?: string,
+  customDateTo?: string,
 ): boolean {
   // Semester variants — share semantik dengan dateInAnalyticsRange.
   if (range.startsWith("h1-") || range.startsWith("h2-")) {
@@ -208,8 +209,12 @@ function inListRange(
   if (range === "last-7-days") {
     return jakartaDate(a.date) >= jakartaDateMinusDays(6);
   }
-  // custom
-  return customDate ? jakartaDate(a.date) === customDate : true;
+  if (range === "custom") {
+    const articleDate = jakartaDate(a.date);
+    if (customDateFrom && articleDate < customDateFrom) return false;
+    if (customDateTo && articleDate > customDateTo) return false;
+  }
+  return true;
 }
 
 /**
@@ -241,7 +246,17 @@ function matchesFilters(
   f: ArticleListFilters,
   anchorMs: number,
 ): boolean {
-  if (!inListRange(a, f.range, anchorMs, f.customDate)) return false;
+  if (
+    !inListRange(
+      a,
+      f.range,
+      anchorMs,
+      f.customDateFrom,
+      f.customDateTo,
+    )
+  ) {
+    return false;
+  }
 
   if (f.q) {
     const q = f.q.toLowerCase();

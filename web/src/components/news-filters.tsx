@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, X } from "lucide-react";
+import { CalendarRange, Search, X } from "lucide-react";
+import { DayPicker, type DateRange as PickerDateRange } from "react-day-picker";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -39,7 +46,15 @@ function isCategory(s: string | null): s is ArticleCategory {
 }
 
 /** Param yang dianggap "filter" (range tab tidak termasuk — itu periode). */
-const FILTER_KEYS = ["q", "category", "subcategory", "sentiment", "date"] as const;
+const FILTER_KEYS = [
+  "q",
+  "category",
+  "subcategory",
+  "sentiment",
+  "date",
+  "from",
+  "to",
+] as const;
 
 /**
  * Filter bar untuk All News page. State sepenuhnya di URL searchParams.
@@ -53,13 +68,7 @@ export function NewsFilters() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-
-  const [q, setQ] = useState(searchParams.get("q") ?? "");
-
-  // Sync search box saat URL berubah dari luar (Clear filters / back button).
-  useEffect(() => {
-    setQ(searchParams.get("q") ?? "");
-  }, [searchParams]);
+  const [q, setOptimisticQ] = useOptimistic(searchParams.get("q") ?? "");
 
   const setParam = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -79,11 +88,25 @@ export function NewsFilters() {
     const params = new URLSearchParams();
     const range = searchParams.get("range");
     if (range) params.set("range", range);
-    setQ("");
     startTransition(() => {
+      setOptimisticQ("");
       router.replace(params.toString() ? `?${params.toString()}` : "?", {
         scroll: false,
       });
+    });
+  };
+
+  const setSearch = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("q", value);
+    } else {
+      params.delete("q");
+    }
+    params.delete("page");
+    startTransition(() => {
+      setOptimisticQ(value);
+      router.replace(`?${params.toString()}`, { scroll: false });
     });
   };
 
@@ -100,10 +123,7 @@ export function NewsFilters() {
               type="search"
               placeholder="Headline, summary, or keyword..."
               value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setParam("q", e.target.value);
-              }}
+              onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
             />
           </div>
@@ -190,15 +210,8 @@ export function NewsFilters() {
           </Select>
         </FilterField>
 
-        <FilterField label="Date" htmlFor="news-date">
-          <Input
-            id="news-date"
-            type="date"
-            value={searchParams.get("date") ?? ""}
-            onChange={(e) => setParam("date", e.target.value)}
-            className="w-full lg:w-[160px]"
-            title="Specific date — overrides range tab when set"
-          />
+        <FilterField label="Date range" htmlFor="news-date-range">
+          <DateRangePicker />
         </FilterField>
       </div>
 
@@ -214,6 +227,212 @@ export function NewsFilters() {
       )}
     </div>
   );
+}
+
+function DateRangePicker() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<PickerDateRange | undefined>(() =>
+    rangeFromParams(searchParams),
+  );
+
+  const appliedRange = rangeFromParams(searchParams);
+  const today = todayInJakarta();
+
+  const applyRange = () => {
+    if (!draft?.from) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("from", toIsoDate(draft.from));
+    params.set("to", toIsoDate(draft.to ?? draft.from));
+    params.delete("date");
+    params.delete("range");
+    params.delete("page");
+    setOpen(false);
+    startTransition(() => {
+      router.replace(`?${params.toString()}`, { scroll: false });
+    });
+  };
+
+  const clearRange = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("from");
+    params.delete("to");
+    params.delete("date");
+    params.delete("page");
+    setDraft(undefined);
+    setOpen(false);
+    startTransition(() => {
+      router.replace(params.toString() ? `?${params.toString()}` : "?", {
+        scroll: false,
+      });
+    });
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) setDraft(appliedRange);
+        setOpen(nextOpen);
+      }}
+    >
+      <PopoverTrigger
+        id="news-date-range"
+        className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 text-left text-sm outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 lg:w-[230px]"
+      >
+        <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
+        <span className={appliedRange?.from ? "truncate" : "truncate text-muted-foreground"}>
+          {formatRange(appliedRange)}
+        </span>
+      </PopoverTrigger>
+
+      <PopoverContent className="w-[min(calc(100vw-2rem),22rem)] p-3">
+        <div className="mb-3 grid grid-cols-3 gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setDraft({ from: today, to: today })}
+          >
+            Today
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setDraft({ from: addDays(today, -29), to: today })
+            }
+          >
+            Last 30 days
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setDraft({
+                from: new Date(today.getFullYear(), today.getMonth(), 1),
+                to: today,
+              })
+            }
+          >
+            This month
+          </Button>
+        </div>
+
+        <DayPicker
+          mode="range"
+          selected={draft}
+          onSelect={setDraft}
+          defaultMonth={draft?.from ?? today}
+          disabled={{ after: today }}
+          navLayout="around"
+          className="news-date-range-calendar mx-auto"
+        />
+
+        <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {formatRange(draft)}
+          </span>
+          <div className="flex shrink-0 gap-2">
+            {(appliedRange?.from || draft?.from) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearRange}
+              >
+                Clear
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              disabled={!draft?.from}
+              onClick={applyRange}
+            >
+              Apply
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function rangeFromParams(
+  searchParams: Pick<URLSearchParams, "get">,
+): PickerDateRange | undefined {
+  const legacy = parseIsoDate(searchParams.get("date"));
+  const requestedFrom = parseIsoDate(searchParams.get("from"));
+  const requestedTo = parseIsoDate(searchParams.get("to"));
+  const first = requestedFrom ?? requestedTo ?? legacy;
+  const second = requestedTo ?? requestedFrom ?? legacy;
+
+  if (!first || !second) return undefined;
+  return first <= second
+    ? { from: first, to: second }
+    : { from: second, to: first };
+}
+
+function parseIsoDate(value: string | null): Date | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return undefined;
+  }
+  return date;
+}
+
+function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function todayInJakarta(): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts();
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return new Date(value("year"), value("month") - 1, value("day"));
+}
+
+function addDays(date: Date, amount: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + amount);
+  return result;
+}
+
+function formatRange(range: PickerDateRange | undefined): string {
+  if (!range?.from) return "Select dates";
+
+  const from = formatDate(range.from);
+  if (!range.to || toIsoDate(range.from) === toIsoDate(range.to)) return from;
+  return `${from} – ${formatDate(range.to)}`;
+}
+
+function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 function FilterField({
