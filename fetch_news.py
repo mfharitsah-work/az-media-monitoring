@@ -40,7 +40,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal
-from urllib.parse import quote_plus
+from urllib.parse import parse_qsl, quote_plus, urlencode, urljoin, urlparse, urlunparse
 
 import feedparser
 import requests
@@ -508,8 +508,80 @@ def _build_response_format() -> dict:
 # RULE-BASED HELPERS (fallback)
 # ============================================================================
 
+TRACKING_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "gbraid",
+    "igshid",
+    "mc_cid",
+    "mc_eid",
+    "utm_campaign",
+    "utm_content",
+    "utm_medium",
+    "utm_source",
+    "utm_term",
+    "wbraid",
+}
+
+
+def canonicalize_article_url(url: str) -> str:
+    """Normalize article URL for identity/dedupe only."""
+    original = url.strip()
+    try:
+        parsed = urlparse(original)
+    except Exception:
+        return original
+
+    if not parsed.scheme or not parsed.netloc:
+        return original
+
+    netloc = parsed.netloc
+    lower_netloc = netloc.lower()
+
+    # AMP/mobile hosts usually mirror the canonical www article.
+    if lower_netloc.startswith("amp."):
+        netloc = "www." + netloc[4:]
+        lower_netloc = netloc.lower()
+    elif lower_netloc.startswith("m."):
+        netloc = "www." + netloc[2:]
+        lower_netloc = netloc.lower()
+
+    segments = [seg for seg in parsed.path.split("/") if seg]
+    filtered_segments = [seg for seg in segments if seg.lower() != "amp"]
+
+    # SINDO exposes both /read/ and /newsread/ for the same article.
+    if lower_netloc.endswith("sindonews.com"):
+        filtered_segments = [
+            "read" if seg.lower() == "newsread" else seg
+            for seg in filtered_segments
+        ]
+
+    path = "/" + "/".join(filtered_segments) if filtered_segments else parsed.path or "/"
+
+    query_pairs = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        key_lower = key.lower()
+        if key_lower in TRACKING_QUERY_KEYS or key_lower.startswith("utm_"):
+            continue
+        if key_lower == "page":
+            continue
+        query_pairs.append((key, value))
+
+    query = urlencode(query_pairs, doseq=True)
+
+    return urlunparse((
+        parsed.scheme,
+        netloc,
+        path,
+        "",
+        query,
+        "",
+    ))
+
+
 def make_article_id(url: str) -> str:
-    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    identity_url = canonicalize_article_url(url)
+    return hashlib.sha256(identity_url.encode("utf-8")).hexdigest()[:12]
 
 
 def is_whitelisted_source(url: str) -> bool:
@@ -594,6 +666,67 @@ def fetch_article_text(url: str, timeout: int = 10) -> str:
     except Exception as e:
         print(f"    ! fetch failed: {e}", file=sys.stderr)
         return ""
+
+
+def extract_html_canonical_url(html: str, base_url: str) -> str | None:
+    """Return <link rel="canonical"> href if present."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    def has_canonical_rel(value) -> bool:
+        if not value:
+            return False
+        if isinstance(value, str):
+            return "canonical" in value.lower().split()
+        return any(str(item).lower() == "canonical" for item in value)
+
+    tag = soup.find("link", rel=has_canonical_rel)
+    if not tag:
+        return None
+    href = tag.get("href")
+    if not href:
+        return None
+    return urljoin(base_url, href)
+
+
+def fetch_article_text_and_canonical(url: str, timeout: int = 10) -> tuple[str, str | None]:
+    """Extract main article body plus canonical URL for identity dedupe."""
+    try:
+        resp = requests.get(
+            url, headers={"User-Agent": USER_AGENT}, timeout=timeout, allow_redirects=True
+        )
+        if resp.status_code != 200:
+            return "", None
+
+        canonical_url = extract_html_canonical_url(resp.text, resp.url)
+        extracted = trafilatura.extract(
+            resp.text,
+            favor_recall=True,
+            include_comments=False,
+            include_tables=False,
+            no_fallback=False,
+        )
+        if extracted and len(extracted) > 200:
+            return extracted[:5000], canonical_url
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+            tag.decompose()
+        selectors = [
+            "article", "[itemprop='articleBody']", ".detail__body-text",
+            ".read__content", ".article-content", ".post-content",
+            ".detail-text", ".content-detail", "main", "#content"
+        ]
+        for sel in selectors:
+            elem = soup.select_one(sel)
+            if elem:
+                text = elem.get_text(separator=" ", strip=True)
+                if len(text) > 200:
+                    return text[:5000], canonical_url
+        paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
+        return " ".join(paragraphs)[:5000], canonical_url
+    except Exception as e:
+        print(f"    ! fetch failed: {e}", file=sys.stderr)
+        return "", None
 
 
 # Body length threshold sebelum kirim ke LM. Di bawah ini, body terlalu tipis
@@ -870,9 +1003,10 @@ def process_article(entry, fetch_body: bool, groq: GroqClient | None) -> dict | 
     description_clean = BeautifulSoup(description, "html.parser").get_text(strip=True)
 
     body = ""
+    canonical_url = None
     if fetch_body:
         print(f"    fetching: {url[:80]}...", file=sys.stderr)
-        body = fetch_article_text(url)
+        body, canonical_url = fetch_article_text_and_canonical(url)
 
     # Body length guard: kalau body terlalu tipis, LM cuma akan paraphrase headline
     # (tidak menambah info). Skip artikel — bukan saved with bad summary.
@@ -886,7 +1020,7 @@ def process_article(entry, fetch_body: bool, groq: GroqClient | None) -> dict | 
     # kolom *_id = Indonesian original. `language` selalu "en" pasca refactor
     # (kolom di-keep untuk backward compat tapi semantik berubah).
     base = {
-        "id": make_article_id(url),
+        "id": make_article_id(canonical_url or url),
         "url": url,
         "date": pub_dt.isoformat(),
         "source": source,
@@ -972,6 +1106,7 @@ def fetch_news(keywords: list[str], hours: int, fetch_body: bool,
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     all_articles: list[dict] = []
     seen_urls: set[str] = set()
+    seen_article_ids: set[str] = set()
 
     try:
         for kw in keywords:
@@ -999,6 +1134,13 @@ def fetch_news(keywords: list[str], hours: int, fetch_body: bool,
 
                 article = process_article(entry, fetch_body, groq)
                 if article:
+                    if article["id"] in seen_article_ids:
+                        print(
+                            f"    skip duplicate canonical article id: {article['id']}",
+                            file=sys.stderr,
+                        )
+                        continue
+                    seen_article_ids.add(article["id"])
                     all_articles.append(article)
                     saved_for_kw += 1
     except TPDLimitExceeded as e:
