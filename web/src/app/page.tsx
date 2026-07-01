@@ -45,12 +45,11 @@ function HeroSection() {
         {today}
       </div>
       <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-        Last 24 Hours
+        Latest News
       </h1>
       <p className="mt-2 max-w-2xl text-muted-foreground">
-        Rolling window of news about AstraZeneca Indonesia and pharma
-        regulatory updates from trusted sources, with sentiment and location
-        analysis.
+        News from yesterday 00:00 WIB through now about AstraZeneca Indonesia
+        and pharma regulatory updates from trusted sources.
       </p>
       <div className="mt-4 flex flex-wrap gap-3">
         <Link
@@ -77,7 +76,7 @@ async function TodayList() {
   // Rolling 24-jam window — konsisten dengan scrape pipeline. Tidak ada lagi
   // edge case "midnight WIB" karena window-nya rolling, bukan calendar today.
   // Fallback ke findRecent kalau 24h kosong (mis. pipeline belum pernah run).
-  const recent = await articleRepo.findLast24h(50);
+  const recent = await articleRepo.findLatest(50);
   const usingFallback = recent.length === 0;
   const articles = usingFallback
     ? await articleRepo.findRecent(10)
@@ -101,13 +100,13 @@ async function TodayList() {
     <div className="space-y-4">
       {usingFallback ? (
         <p className="text-sm text-muted-foreground">
-          No news in the last 24 hours. Showing the{" "}
+          No latest news. Showing the{" "}
           <span className="font-medium text-foreground">{articles.length} most recent</span>{" "}
           article{articles.length === 1 ? "" : "s"} instead.
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          {articles.length} article{articles.length === 1 ? "" : "s"} in the last 24 hours
+          {articles.length} article{articles.length === 1 ? "" : "s"} in Latest News
         </p>
       )}
       {articles.map((article) => (

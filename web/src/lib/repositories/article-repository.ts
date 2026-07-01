@@ -27,8 +27,8 @@ export interface ArticleRepository {
   /** Find one by stable id (12-char hash) */
   findById(id: string): Promise<Article | null>;
 
-  /** Get articles from rolling last-24h window, ordered by date desc */
-  findLast24h(limit?: number): Promise<Article[]>;
+  /** Get articles from Latest News window, ordered by date desc */
+  findLatest(limit?: number): Promise<Article[]>;
 
   /**
    * Get N most recent articles regardless of date — dipakai di landing page

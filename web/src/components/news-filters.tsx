@@ -458,7 +458,7 @@ function FilterField({
 }
 
 const RANGE_TABS = [
-  { value: "last-24h", label: "Last 24h" },
+  { value: "latest", label: "Latest News" },
   { value: "last-7-days", label: "Last 7 days" },
   { value: "all-time", label: "All Time" },
 ] as const;

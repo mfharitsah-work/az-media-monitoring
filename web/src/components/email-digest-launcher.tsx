@@ -2,11 +2,23 @@ import { EmailDigestButton } from "@/components/email-digest-button";
 import { articleRepo } from "@/lib/repositories";
 
 /**
- * Server component yang mengambil artikel 24 jam terakhir lalu render
- * tombol compose. Reusable di home page dan all-news page (saat tab
- * Last 24 hours aktif).
+ * Server component yang mengambil artikel untuk opsi digest lalu render tombol
+ * compose. Reusable di home page dan All News page saat Latest News aktif.
  */
 export async function EmailDigestLauncher() {
-  const articles = await articleRepo.findLast24h(100);
-  return <EmailDigestButton articles={articles} />;
+  const [yesterday, today, latest] = await Promise.all([
+    articleRepo.findMany({ range: "yesterday", limit: 200 }),
+    articleRepo.findMany({ range: "today", limit: 200 }),
+    articleRepo.findMany({ range: "latest", limit: 300 }),
+  ]);
+
+  return (
+    <EmailDigestButton
+      articleGroups={{
+        yesterday: yesterday.items,
+        today: today.items,
+        latest: latest.items,
+      }}
+    />
+  );
 }

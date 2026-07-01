@@ -39,6 +39,13 @@ export interface SenderInfo {
   email: string;
 }
 
+export interface EmailComposeFields {
+  to: string;
+  cc: string;
+  subject: string;
+  dateLabel?: string;
+}
+
 export interface EmailTemplate {
   to: string;
   cc: string;
@@ -88,6 +95,14 @@ function signatureLines(sender: SenderInfo): string[] {
     .filter(Boolean);
   lines.push("AstraZeneca Indonesia");
   return lines;
+}
+
+export function normalizeRecipientList(value: string): string {
+  return value
+    .split(/[;,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(",");
 }
 
 // =============================================================================
@@ -184,18 +199,27 @@ function buildHtml(articles: Article[], sender: SenderInfo, dateLabel: string): 
 export function buildEmailTemplate(
   articles: Article[],
   sender: SenderInfo,
+  fields?: EmailComposeFields,
 ): EmailTemplate {
-  const dateLabel = todayLabel();
-  const subject = `AZ Daily Media Monitoring - ${dateLabel}`;
+  const dateLabel = fields?.dateLabel?.trim() || todayLabel();
+  const subject = fields?.subject.trim() || `AZ Daily Media Monitoring - ${dateLabel}`;
+  const to = normalizeRecipientList(fields?.to || RECIPIENT_TO);
+  const cc = normalizeRecipientList(fields?.cc || RECIPIENT_CC);
 
   const body = buildPlain(articles, sender, dateLabel);
   const html = buildHtml(articles, sender, dateLabel);
 
-  const mailtoUrl =
-    `mailto:${RECIPIENT_TO}` +
-    `?cc=${RECIPIENT_CC}` +
-    `&subject=${encodeURIComponent(subject)}` +
-    `&body=${encodeURIComponent(PASTE_HINT_BODY)}`;
+  const query = new URLSearchParams();
+  if (cc) query.set("cc", cc);
+  query.set("subject", subject);
+  query.set("body", PASTE_HINT_BODY);
 
-  return { to: RECIPIENT_TO, cc: RECIPIENT_CC, subject, body, html, mailtoUrl };
+  return {
+    to,
+    cc,
+    subject,
+    body,
+    html,
+    mailtoUrl: `mailto:${to}?${query.toString()}`,
+  };
 }

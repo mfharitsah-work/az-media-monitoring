@@ -12,7 +12,7 @@ import {
 import type { Article } from "@/lib/types";
 
 /**
- * Landscape card untuk daftar berita (Landing + All News › Last 24h tab).
+ * Landscape card untuk daftar berita (Landing + All News Latest News tab).
  *
  * Visual: stripe warna tipis di kiri (warna = subcategory). Subcategory badge
  * sudah mengimplikasikan category, jadi category badge tidak ditampilkan di

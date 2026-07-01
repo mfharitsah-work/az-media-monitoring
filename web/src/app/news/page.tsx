@@ -25,7 +25,9 @@ export const revalidate = 3600;
 
 /** Page size per range — landscape cards lebih besar, gallery lebih kompak. */
 const PAGE_SIZE_BY_RANGE: Record<DateRange, number> = {
-  "last-24h": 10,
+  latest: 10,
+  yesterday: 10,
+  today: 10,
   "last-7-days": 20,
   "all-time": 20,
   custom: 20,
@@ -33,7 +35,7 @@ const PAGE_SIZE_BY_RANGE: Record<DateRange, number> = {
 
 /**
  * Search params (URL state):
- * - range:     "last-24h" | "last-7-days" | "all-time"
+ * - range:     "latest" | "last-7-days" | "all-time"
  * - from/to:   inclusive YYYY-MM-DD bounds; override range → custom
  * - date:      legacy single-date param; treated as from = to
  * - q:         free text search
@@ -48,8 +50,8 @@ export default async function NewsPage({
 }) {
   const sp = await searchParams;
   const { filters, page, pageSize } = parseParams(sp);
-  // Landscape layout dipakai untuk window kecil (last-24h); gallery untuk yg lebih besar.
-  const isCompactWindow = filters.range === "last-24h";
+  // Landscape layout dipakai untuk window kecil; gallery untuk yang lebih besar.
+  const isCompactWindow = ["latest", "yesterday", "today"].includes(filters.range);
   const activeRangeTab = filters.range;
 
   return (
@@ -73,7 +75,7 @@ export default async function NewsPage({
         <NewsFilters />
       </div>
 
-      {filters.range === "last-24h" && (
+      {filters.range === "latest" && (
         <Suspense fallback={null}>
           <EmailDigestLauncher />
         </Suspense>
@@ -100,8 +102,8 @@ function parseParams(sp: Record<string, string | undefined>): {
   page: number;
   pageSize: number;
 } {
-  // Custom date bounds override the preset range. Default: rolling last-24h.
-  let range: DateRange = "last-24h";
+  // Custom date bounds override the preset range. Default: Latest News.
+  let range: DateRange = "latest";
   let customDateFrom: string | undefined;
   let customDateTo: string | undefined;
   const legacyDate = validIsoDate(sp.date);
@@ -116,10 +118,16 @@ function parseParams(sp: Record<string, string | undefined>): {
       firstBound <= secondBound ? firstBound : secondBound;
     customDateTo =
       firstBound <= secondBound ? secondBound : firstBound;
+  } else if (sp.range === "today") {
+    range = "today";
+  } else if (sp.range === "yesterday") {
+    range = "yesterday";
   } else if (sp.range === "last-7-days") {
     range = "last-7-days";
   } else if (sp.range === "all-time") {
     range = "all-time";
+  } else if (sp.range === "last-24h") {
+    range = "latest";
   }
 
   const parsedCategory = sp.category

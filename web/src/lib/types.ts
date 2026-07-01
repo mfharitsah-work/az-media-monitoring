@@ -104,12 +104,16 @@ export type ArticleSentiment = z.infer<typeof ArticleSentimentSchema>;
  * supaya KPI di analytics page bisa reuse `filteredKpi` saat user pilih semester.
  */
 export type DateRange =
-  | "last-24h"
+  | "latest"
+  | "yesterday"
+  | "today"
   | "last-7-days"
   | "all-time"
   | "custom"
   | `h1-${number}`
   | `h2-${number}`;
+
+export type DigestDateRange = "yesterday" | "today" | "latest";
 
 export interface ArticleListFilters {
   range: DateRange;
@@ -241,18 +245,16 @@ export interface AllTimeKpi {
 }
 
 /**
- * KPI snapshot — all-time totals PLUS last-24h contribution (delta).
- * Used by landing page so labels match All News but show "+N last 24h" indicator.
+ * KPI snapshot — all-time totals PLUS Latest News contribution.
+ * Used by landing page so labels match All News but show a Latest News delta.
  *
- * Rolling 24h window (sinkron dengan scrape pipeline) — bukan calendar "today".
- * Konsekuensinya: artikel publish 23:50 kemarin tetap dihitung sebagai "last 24h"
- * sampai ~23:50 hari ini, jadi UX tidak break di boundary midnight WIB.
+ * Latest News = yesterday 00:00 WIB through now.
  */
 export interface DailyKpi extends AllTimeKpi {
-  /** Articles published in rolling last 24h */
-  totalLast24h: number;
-  /** Rolling 24h contribution to net sentiment (pos − neg) */
-  netSentimentLast24h: number;
-  /** Rolling 24h contribution to AZ Related (Focus + Mentioned) */
-  azRelatedLast24h: number;
+  /** Articles published in Latest News window */
+  totalLatest: number;
+  /** Latest News contribution to net sentiment */
+  netSentimentLatest: number;
+  /** Latest News contribution to AZ Related (Focus + Mentioned) */
+  azRelatedLatest: number;
 }

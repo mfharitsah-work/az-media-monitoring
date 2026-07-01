@@ -38,7 +38,7 @@ export async function TodayKpiCards() {
         valueColor={BRAND.darkMulberry}
         footer={
           <div className="space-y-1">
-            <DeltaBadge value={kpi.totalLast24h} unit="last 24h" />
+            <DeltaBadge value={kpi.totalLatest} unit="in Latest News" />
           </div>
         }
       />
@@ -51,7 +51,7 @@ export async function TodayKpiCards() {
         footer={
           <div className="space-y-1">
             <SentimentBreakdown kpi={kpi} />
-            <DeltaBadge value={kpi.netSentimentLast24h} unit="last 24h" />
+            <DeltaBadge value={kpi.netSentimentLatest} unit="in Latest News" />
           </div>
         }
       />
@@ -64,7 +64,7 @@ export async function TodayKpiCards() {
         footer={
           <div className="space-y-1">
             <AzBreakdown kpi={kpi} />
-            <DeltaBadge value={kpi.azRelatedLast24h} unit="last 24h" />
+            <DeltaBadge value={kpi.azRelatedLatest} unit="in Latest News" />
           </div>
         }
       />
@@ -93,7 +93,7 @@ export async function FilteredKpiCards({
         valueColor={BRAND.darkMulberry}
         footer={
           <div className="space-y-1">
-            <DeltaBadge value={kpiToday.totalLast24h} unit="last 24h" />
+            <DeltaBadge value={kpiToday.totalLatest} unit="in Latest News" />
           </div>
         }
       />
