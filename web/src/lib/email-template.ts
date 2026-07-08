@@ -23,7 +23,7 @@ export const RECIPIENT_CC = "muhammad.cavannaufalazizi@astrazeneca.com";
  * Kalau user lupa Ctrl+V, isi default ini tetap masuk akal untuk recipient.
  */
 const PASTE_HINT_BODY =
-  "[ Paste the email digest here — press Ctrl+A then Ctrl+V to replace " +
+  "[ Paste the email digest here - press Ctrl+A then Ctrl+V to replace " +
   "this text with the formatted table copied to your clipboard ]";
 
 const JKT = "Asia/Jakarta";
@@ -103,6 +103,15 @@ export function normalizeRecipientList(value: string): string {
     .map((item) => item.trim())
     .filter(Boolean)
     .join(",");
+}
+
+function buildMailtoUrl(to: string, params: Record<string, string | undefined>): string {
+  const query = Object.entries(params)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${key}=${encodeURIComponent(value ?? "")}`)
+    .join("&");
+
+  return `mailto:${to}${query ? `?${query}` : ""}`;
 }
 
 // =============================================================================
@@ -209,17 +218,16 @@ export function buildEmailTemplate(
   const body = buildPlain(articles, sender, dateLabel);
   const html = buildHtml(articles, sender, dateLabel);
 
-  const query = new URLSearchParams();
-  if (cc) query.set("cc", cc);
-  query.set("subject", subject);
-  query.set("body", PASTE_HINT_BODY);
-
   return {
     to,
     cc,
     subject,
     body,
     html,
-    mailtoUrl: `mailto:${to}?${query.toString()}`,
+    mailtoUrl: buildMailtoUrl(to, {
+      cc,
+      subject,
+      body: PASTE_HINT_BODY,
+    }),
   };
 }
