@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "AZ Media Monitor",
-    template: "%s · AZ Media Monitor",
+    default: "Media Monitoring",
+    template: "%s · Media Monitoring",
   },
   description:
     "Daily news monitoring for AstraZeneca Indonesia and pharma regulatory landscape — sentiment, category, and location analysis.",
