@@ -1,26 +1,32 @@
 name: Daily News Scrape & Load
 
-# Schedule: setiap hari 11:10 WIB = 04:10 UTC.
-# Menit 10 dipilih supaya tidak tepat di awal jam, karena GitHub Actions
-# scheduled workflow lebih rawan delay/drop saat load tinggi di menit 00.
-# Window scrape: rolling 24 jam ke belakang dari waktu run (lihat --hours below).
-# Bisa juga di-trigger manual lewat tab Actions di GitHub.
+# Schedule: setiap 6 jam di menit 17 UTC.
+# Perkiraan WIB: 07:17, 13:17, 19:17, 01:17.
+# Menit 17 dipilih supaya tidak tepat di awal jam, karena scheduled workflow
+# lebih rawan delay/drop saat load tinggi di menit 00.
+#
+# Scheduled run memakai dynamic scrape window dari pipeline_state:
+# last successful run -> now + buffer. Manual run bisa override `hours`.
 on:
   schedule:
-    - cron: "0 */6 * * *"
-  workflow_dispatch:  # manual trigger
+    - cron: "17 0,6,12,18 * * *"
+  workflow_dispatch:
     inputs:
       hours:
         description: "Window jam ke belakang"
         default: "24"
         required: false
       max_per_keyword:
-        description: "Cap artikel per keyword (anti-burst guard). 5 = aman quota, 10 = coverage lebih luas"
+        description: "Cap artikel per keyword. 5 = aman quota, 10 = coverage lebih luas"
         default: "5"
         required: false
 
 permissions:
   contents: read
+
+concurrency:
+  group: daily-news-scrape-main
+  cancel-in-progress: false
 
 jobs:
   scrape-and-load:
@@ -47,57 +53,63 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Authenticate to Google Cloud
-        # Set Application Default Credentials dari SA JSON secret.
-        # google.cloud.bigquery otomatis pick up via ADC.
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_JSON }}
 
+      - name: Compute scrape window
+        id: window
+        # Scheduled run tidak lagi fixed 24h. Window dihitung dari last success
+        # dengan buffer 3 jam, lalu di-clamp ke 6-48 jam.
+        run: |
+          HOURS="$(python compute_scrape_window.py \
+            --state-name daily_news_scrape \
+            --default-hours 24 \
+            --min-hours 6 \
+            --max-hours 48 \
+            --buffer-hours 3)"
+          echo "hours=${HOURS}" >> "$GITHUB_OUTPUT"
+          echo "Using dynamic scrape window: ${HOURS} hours"
+
       - name: Run scraper (fetch + LM analysis + ID/EN translation)
-        # fetch_news.py sekarang produce dual-language output (Indonesian + English)
-        # dalam SATU Groq call per artikel. Tidak perlu step translate terpisah.
-        #
-        # --max-per-keyword: cap artikel per keyword (anti-burst guard) — burst news
-        # seperti gempa Palu bisa menghasilkan 20+ artikel mirip via 1 keyword. Cap=5
-        # default. Bisa override dari workflow_dispatch input.
-        #
-        # fetch_news.py exit code 0 walau TPD limit hit di tengah — handle graceful:
-        # save partial JSON, downstream tetap load apa adanya.
+        # fetch_news.py produce dual-language output dalam satu Groq call per artikel.
+        # Manual workflow_dispatch bisa override hours/max_per_keyword.
+        # Scheduled run memakai hours dari step Compute scrape window.
         run: |
           python fetch_news.py \
             --use-groq \
-            --hours "${{ github.event.inputs.hours || '24' }}" \
+            --hours "${{ github.event.inputs.hours || steps.window.outputs.hours }}" \
             --max-per-keyword "${{ github.event.inputs.max_per_keyword || '5' }}" \
             --output news.csv
 
       - name: Load to BigQuery
-        # bq_load.py skip gracefully kalau JSON kosong (0 artikel) — exit 0.
+        # bq_load.py skip gracefully kalau JSON kosong (0 artikel) dan exit 0.
+        # Loader memakai MERGE by id supaya overlap window tidak menambah duplicate rows.
         run: python bq_load.py news.json
+
+      - name: Update scrape state
+        # State di-update setelah main scrape + main BigQuery load sukses.
+        # Competitor scrape bersifat supplementary, jadi tidak menahan state utama.
+        run: python update_pipeline_state.py --state-name daily_news_scrape
 
       - name: Scrape competitor counts (Roche, Pfizer, Novartis, etc.)
         # Count-only scraper untuk Share of Voice tracking di analytics page.
-        # No Groq calls (quota-free). 9 competitors, ~1-2 menit total.
-        # Roche Indonesia special: tidak apply SOURCE_WHITELIST (cari semua
-        # Indonesian-language news).
-        # continue-on-error: kalau competitor scrape gagal, main pipeline
-        # tetap dianggap success — competitor data hanya supplementary.
+        # No Groq calls. Roche Indonesia special: tidak apply SOURCE_WHITELIST.
+        # continue-on-error: competitor data hanya supplementary.
         continue-on-error: true
         run: |
           python fetch_competitor_counts.py \
-            --hours "${{ github.event.inputs.hours || '24' }}" \
+            --hours "${{ github.event.inputs.hours || steps.window.outputs.hours }}" \
             --output competitor_news.json
 
       - name: Load competitor counts to BigQuery
-        # competitor_articles table — separate dari articles. Append-only,
-        # dedupe via view competitor_articles_latest.
+        # Loader memakai MERGE by (company, url), jadi overlap window tidak
+        # menambah duplicate rows.
         continue-on-error: true
         run: python bq_load_competitors.py competitor_news.json
 
       - name: Invalidate Vercel cache
-        # Beritahu Next.js drop cached articles → visitor berikutnya dapat data fresh.
-        # Tanpa step ini, cache TTL 24h akan tetap serve data lama sampai expired.
-        # Step di-skip kalau VERCEL_URL belum di-set (mis. sebelum first deploy);
-        # workflow tidak gagal karena ini bukan blocker untuk pipeline scrape itu sendiri.
+        # Beritahu Next.js drop cached articles. Step di-skip kalau secret belum di-set.
         if: success() && env.VERCEL_URL != '' && env.REVALIDATE_SECRET != ''
         run: |
           curl -X POST "${VERCEL_URL%/}/api/revalidate" \

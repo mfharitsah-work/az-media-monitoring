@@ -42,6 +42,7 @@ from fetch_news import (
     JUNK_TITLE_RE,
     SOURCE_WHITELIST,
     USER_AGENT,
+    canonicalize_article_url,
     is_whitelisted_source,
     resolve_google_news_url,
 )
@@ -127,6 +128,7 @@ def fetch_one_company(company: str, hours: int) -> list[dict]:
             real_url = resolve_google_news_url(entry.link)
         except Exception:
             real_url = entry.link  # fallback ke link asli kalau decoder fail
+        real_url = canonicalize_article_url(real_url)
 
         if real_url in seen_urls:
             continue

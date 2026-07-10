@@ -1,49 +1,47 @@
 -- BigQuery schema untuk media-monitoring AstraZeneca Indonesia.
 --
--- Design choice: APPEND-ONLY table + VIEW yang ambil latest per id.
--- Alasan: BigQuery tidak punya native UPSERT yang murah, dan append-only memberi
--- benefit:
---   1. Idempotent load — re-run pipeline tidak masalah, view selalu konsisten
---   2. Audit trail — bisa lihat history scraped_at suatu artikel
---   3. Simpler loader code — tidak perlu MERGE statement
+-- Design choice: idempotent loaders.
+--   - `bq_load.py` MERGE by article `id`
+--   - `bq_load_competitors.py` MERGE by `(company, url)`
+--   - `pipeline_state` stores last successful main scrape time so scheduled
+--     workflow can calculate a smaller dynamic lookback window.
 --
--- Cara pakai dari Next.js: SELECT FROM articles_latest (bukan articles).
+-- Views are kept for compatibility and protection against old duplicate rows.
 --
--- Jalankan SEKALI di BigQuery Console (Project: GANTI_PROJECT_ID):
---   bq query --use_legacy_sql=false < bq_schema.sql
+-- Jalankan SEKALI di BigQuery Console, atau re-run aman karena IF NOT EXISTS:
+--   bq query --use_legacy_sql=false < infrastructure/bq_schema.sql
 
 -- =============================================================================
--- TABLE: articles (append-only raw inserts)
+-- TABLE: articles
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `az_daily_news_collection.articles` (
-  id            STRING    NOT NULL  OPTIONS(description="12-char stable hash dari URL"),
-  headline      STRING    NOT NULL  OPTIONS(description="Headline ENGLISH (default UI display)"),
-  headline_id   STRING                OPTIONS(description="Headline original Bahasa Indonesia (dari RSS feed)"),
-  url           STRING    NOT NULL  OPTIONS(description="URL artikel asli (sudah di-decode dari Google News redirect)"),
+  id            STRING    NOT NULL  OPTIONS(description="12-char stable hash dari canonical URL"),
+  headline      STRING    NOT NULL  OPTIONS(description="Headline English, default UI display"),
+  headline_id   STRING              OPTIONS(description="Headline original Bahasa Indonesia"),
+  url           STRING    NOT NULL  OPTIONS(description="URL artikel asli, sudah di-decode/canonicalized"),
   date          TIMESTAMP NOT NULL  OPTIONS(description="published_at dari RSS feed"),
-  source        STRING                OPTIONS(description="Nama publikasi, mis. 'Kompas.com'"),
-  summary       STRING                OPTIONS(description="Ringkasan English (default UI display)"),
-  summary_id    STRING                OPTIONS(description="Ringkasan Bahasa Indonesia"),
-  category      STRING                OPTIONS(description="enum: 'About AstraZeneca' | 'Regulatory/Policy'"),
-  subcategory   STRING                OPTIONS(description="enum: 'AZ Focus' | 'AZ Mentioned' | 'Stakeholder & Regulator' | 'Pharma Policy' | 'General Health Regulation'"),
-  sentiment     STRING                OPTIONS(description="enum: 'Positive' | 'Neutral' | 'Negative'"),
-  keywords      STRING                OPTIONS(description="5 keyword English dipisah koma"),
-  keywords_id   STRING                OPTIONS(description="5 keyword Bahasa Indonesia dipisah koma"),
-  city          STRING                OPTIONS(description="Kota Indonesia atau '' kalau tidak disebut"),
-  province      STRING                OPTIONS(description="Provinsi Indonesia (nama resmi) atau ''"),
-  language      STRING                OPTIONS(description="ISO 639-1. Selalu 'en' setelah dual-column refactor; field di-keep untuk backward compat"),
-  scraped_at    TIMESTAMP NOT NULL  OPTIONS(description="Waktu loader memasukkan row ini")
+  source        STRING              OPTIONS(description="Nama publikasi, mis. Kompas.com"),
+  summary       STRING              OPTIONS(description="Ringkasan English, default UI display"),
+  summary_id    STRING              OPTIONS(description="Ringkasan Bahasa Indonesia"),
+  category      STRING              OPTIONS(description="About AstraZeneca atau Regulatory/Policy"),
+  subcategory   STRING              OPTIONS(description="AZ Focus, AZ Mentioned, Stakeholder & Regulator, Pharma Policy, atau General Health Regulation"),
+  sentiment     STRING              OPTIONS(description="Positive, Neutral, atau Negative"),
+  keywords      STRING              OPTIONS(description="5 keyword English dipisah koma"),
+  keywords_id   STRING              OPTIONS(description="5 keyword Bahasa Indonesia dipisah koma"),
+  city          STRING              OPTIONS(description="Kota Indonesia atau kosong kalau tidak disebut"),
+  province      STRING              OPTIONS(description="Provinsi Indonesia atau kosong kalau tidak disebut"),
+  language      STRING              OPTIONS(description="ISO 639-1. Kept for backward compatibility"),
+  scraped_at    TIMESTAMP NOT NULL  OPTIONS(description="Waktu loader meng-upsert row ini")
 )
 PARTITION BY DATE(date)
 CLUSTER BY id, category, subcategory
 OPTIONS(
-  description="Append-only raw inserts dari pipeline scraper. Query lewat articles_latest view.",
-  -- partition_expiration_days dihilangkan = retain forever. Set angka kalau perlu cap storage.
+  description="Article table loaded idempotently by MERGE on id. Query via articles_latest view.",
   partition_expiration_days=NULL
 );
 
 -- =============================================================================
--- VIEW: articles_latest (deduped — 1 row per id, latest scrape wins)
+-- VIEW: articles_latest (1 row per id)
 -- =============================================================================
 CREATE OR REPLACE VIEW `az_daily_news_collection.articles_latest` AS
 SELECT * EXCEPT(rn)
@@ -56,11 +54,7 @@ FROM (
 WHERE rn = 1;
 
 -- =============================================================================
--- VIEW: articles_last_24h — rolling 24-jam window untuk landing page.
--- Konsisten dengan scrape window (pipeline jalan --hours 24, rolling juga).
--- Beda dengan calendar "today" view yang sebelumnya: tidak terpengaruh boundary
--- midnight (artikel publish 23:50 kemarin tetap muncul di view ini sampai
--- ~23:50 hari ini, bukan langsung hilang setelah ganti tanggal).
+-- VIEW: articles_last_24h (legacy compatibility)
 -- =============================================================================
 CREATE OR REPLACE VIEW `az_daily_news_collection.articles_last_24h` AS
 SELECT *
@@ -69,41 +63,25 @@ WHERE date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
 ORDER BY date DESC;
 
 -- =============================================================================
--- TABLE: competitor_articles (append-only, count-only competitor tracking)
+-- TABLE: competitor_articles
 -- =============================================================================
--- Tujuan: track jumlah news per kompetitor AstraZeneca Indonesia tanpa
--- scrape detail (no headline body / no LM classification). Cukup URL + metadata
--- minimal supaya bisa di-aggregate per range filter di analytics page
--- (Share of Voice by Company).
---
--- Pattern sama dengan tabel `articles`: append-only + view dedup. Tapi:
---   - PARTITION BY DATE(published_at) — query lebih cepat untuk range filter
---   - CLUSTER BY company — typical query group by company
---   - Tidak ada sentiment/category/keywords — kita cuma butuh COUNT
---
--- Roche Indonesia adalah special case: scraper TIDAK apply SOURCE_WHITELIST
--- untuk Roche (asumsi coverage tipis di whitelist). Lihat
--- fetch_competitor_counts.py.
 CREATE TABLE IF NOT EXISTS `az_daily_news_collection.competitor_articles` (
-  url           STRING    NOT NULL  OPTIONS(description="URL artikel (sudah di-decode dari Google News redirect)"),
-  company       STRING    NOT NULL  OPTIONS(description="Nama kompetitor canonical: 'Roche Indonesia', 'Novo Nordisk Indonesia', dll"),
-  source        STRING                OPTIONS(description="Apex domain publikasi, mis. 'detik.com'"),
+  url           STRING    NOT NULL  OPTIONS(description="Canonicalized article URL"),
+  company       STRING    NOT NULL  OPTIONS(description="Nama kompetitor canonical"),
+  source        STRING              OPTIONS(description="Apex domain publikasi, mis. detik.com"),
   published_at  TIMESTAMP NOT NULL  OPTIONS(description="published_at dari RSS feed"),
-  scraped_at    TIMESTAMP NOT NULL  OPTIONS(description="Waktu loader memasukkan row ini")
+  scraped_at    TIMESTAMP NOT NULL  OPTIONS(description="Waktu loader meng-upsert row ini")
 )
 PARTITION BY DATE(published_at)
 CLUSTER BY company
 OPTIONS(
-  description="Append-only competitor news count tracking. Query lewat competitor_articles_latest view.",
+  description="Competitor news count tracking loaded idempotently by MERGE on (company, url).",
   partition_expiration_days=NULL
 );
 
 -- =============================================================================
--- VIEW: competitor_articles_latest (deduped — 1 row per (company, url))
+-- VIEW: competitor_articles_latest (1 row per company + url)
 -- =============================================================================
--- Dedup penting karena scrape harian rolling 24h overlap dengan scrape
--- sebelumnya — URL yang sama bisa muncul di 2 scrape berturut-turut. Latest
--- scraped_at wins (paling baru di-confirm masih live).
 CREATE OR REPLACE VIEW `az_daily_news_collection.competitor_articles_latest` AS
 SELECT * EXCEPT(rn)
 FROM (
@@ -113,3 +91,15 @@ FROM (
   FROM `az_daily_news_collection.competitor_articles`
 )
 WHERE rn = 1;
+
+-- =============================================================================
+-- TABLE: pipeline_state
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `az_daily_news_collection.pipeline_state` (
+  name             STRING    NOT NULL OPTIONS(description="Pipeline state key, e.g. daily_news_scrape"),
+  last_success_at  TIMESTAMP NOT NULL OPTIONS(description="Last successful main scrape/load completion time"),
+  updated_at       TIMESTAMP NOT NULL OPTIONS(description="Last state update time")
+)
+OPTIONS(
+  description="Small state table used to compute dynamic scheduled scrape windows."
+);
