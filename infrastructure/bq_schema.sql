@@ -1,8 +1,9 @@
 -- BigQuery schema untuk media-monitoring AstraZeneca Indonesia.
 --
 -- Design choice: idempotent loaders.
---   - `bq_load.py` MERGE by article `id`
---   - `bq_load_competitors.py` MERGE by `(company, url)`
+--   - `bq_load.py` dedupes by article `id`
+--   - `bq_load_competitors.py` dedupes by `(company, url)`
+--   - loaders avoid BigQuery DML/MERGE so they work without billing enabled
 --   - `pipeline_state` stores last successful main scrape time so scheduled
 --     workflow can calculate a smaller dynamic lookback window.
 --
@@ -36,7 +37,7 @@ CREATE TABLE IF NOT EXISTS `az_daily_news_collection.articles` (
 PARTITION BY DATE(date)
 CLUSTER BY id, category, subcategory
 OPTIONS(
-  description="Article table loaded idempotently by MERGE on id. Query via articles_latest view.",
+  description="Article table loaded idempotently by non-DML dedup overwrite. Query via articles_latest view.",
   partition_expiration_days=NULL
 );
 
@@ -75,7 +76,7 @@ CREATE TABLE IF NOT EXISTS `az_daily_news_collection.competitor_articles` (
 PARTITION BY DATE(published_at)
 CLUSTER BY company
 OPTIONS(
-  description="Competitor news count tracking loaded idempotently by MERGE on (company, url).",
+  description="Competitor news count tracking loaded idempotently by non-DML dedup overwrite.",
   partition_expiration_days=NULL
 );
 

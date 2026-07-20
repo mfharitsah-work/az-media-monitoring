@@ -25,7 +25,7 @@ export function SiteHeader() {
             priority
             className="h-6 w-auto shrink-0 object-contain sm:h-6"
           />
-          <span className="truncate text-[11px] leading-none text-white/90 sm:text-xl ml-2">
+          <span className="truncate text-[11px] leading-none text-white/90 sm:text-xl ml-2 ">
             Media Monitoring
           </span>
         </Link>

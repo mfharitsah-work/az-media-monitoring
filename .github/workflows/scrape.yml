@@ -84,7 +84,8 @@ jobs:
 
       - name: Load to BigQuery
         # bq_load.py skip gracefully kalau JSON kosong (0 artikel) dan exit 0.
-        # Loader memakai MERGE by id supaya overlap window tidak menambah duplicate rows.
+        # Loader memakai non-DML dedup overwrite supaya overlap window tidak
+        # menambah duplicate rows, dan tetap kompatibel dengan BigQuery free tier.
         run: python bq_load.py news.json
 
       - name: Update scrape state
@@ -103,8 +104,8 @@ jobs:
             --output competitor_news.json
 
       - name: Load competitor counts to BigQuery
-        # Loader memakai MERGE by (company, url), jadi overlap window tidak
-        # menambah duplicate rows.
+        # Loader memakai non-DML dedup overwrite by (company, url), jadi overlap
+        # window tidak menambah duplicate rows.
         continue-on-error: true
         run: python bq_load_competitors.py competitor_news.json
 

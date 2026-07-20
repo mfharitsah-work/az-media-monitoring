@@ -1,5 +1,7 @@
 """
 Update BigQuery pipeline_state after a successful scraper/load run.
+
+This avoids BigQuery DML/MERGE so it can run on a billing-disabled project.
 """
 
 from __future__ import annotations
@@ -7,6 +9,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from google.cloud import bigquery
@@ -47,6 +51,31 @@ def ensure_state_table(
     return table_ref
 
 
+def _create_state_table(client: bigquery.Client, table_ref: str) -> None:
+    bq_table = bigquery.Table(table_ref, schema=STATE_SCHEMA)
+    bq_table.description = "Temporary pipeline state table."
+    client.create_table(bq_table)
+
+
+def _build_state_replacement_sql(table_ref: str, staging_ref: str) -> str:
+    return f"""
+SELECT name, last_success_at, updated_at
+FROM (
+  SELECT
+    name,
+    last_success_at,
+    updated_at,
+    ROW_NUMBER() OVER (PARTITION BY name ORDER BY updated_at DESC) AS rn
+  FROM (
+    SELECT name, last_success_at, updated_at FROM `{table_ref}`
+    UNION ALL
+    SELECT name, last_success_at, updated_at FROM `{staging_ref}`
+  )
+)
+WHERE rn = 1
+"""
+
+
 def update_state(
     project_id: str,
     dataset: str,
@@ -56,35 +85,69 @@ def update_state(
 ) -> None:
     client = bigquery.Client(project=project_id, location=location)
     table_ref = ensure_state_table(client, project_id, dataset, table)
+    staging_ref = f"{project_id}.{dataset}.staging_pipeline_state_{uuid.uuid4().hex}"
+    replacement_ref = f"{project_id}.{dataset}.replacement_pipeline_state_{uuid.uuid4().hex}"
 
-    query = f"""
-MERGE `{table_ref}` T
-USING (
-  SELECT
-    @state_name AS name,
-    CURRENT_TIMESTAMP() AS last_success_at,
-    CURRENT_TIMESTAMP() AS updated_at
-) S
-ON T.`name` = S.`name`
-WHEN MATCHED THEN
-  UPDATE SET
-    last_success_at = S.last_success_at,
-    updated_at = S.updated_at
-WHEN NOT MATCHED THEN
-  INSERT (name, last_success_at, updated_at)
-  VALUES (S.name, S.last_success_at, S.updated_at)
-"""
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("state_name", "STRING", state_name)
-        ]
+    now = datetime.now(timezone.utc).isoformat()
+    load_job_config = bigquery.LoadJobConfig(
+        schema=STATE_SCHEMA,
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
     )
-    job = client.query(query, job_config=job_config)
-    print(f"[*] Submitted state MERGE job {job.job_id} -> {table_ref}", file=sys.stderr)
-    job.result()
-    if job.errors:
-        print(f"[!] State MERGE errors: {job.errors}", file=sys.stderr)
-        raise RuntimeError("BigQuery pipeline_state MERGE job had errors")
+    row = {
+        "name": state_name,
+        "last_success_at": now,
+        "updated_at": now,
+    }
+
+    try:
+        load_job = client.load_table_from_json(
+            [row],
+            staging_ref,
+            job_config=load_job_config,
+        )
+        print(f"[*] Submitted state staging load job {load_job.job_id} -> "
+              f"{staging_ref}", file=sys.stderr)
+        load_job.result()
+        if load_job.errors:
+            print(f"[!] State load errors: {load_job.errors}", file=sys.stderr)
+            raise RuntimeError("BigQuery pipeline_state load job had errors")
+
+        _create_state_table(client, replacement_ref)
+        query_job_config = bigquery.QueryJobConfig(
+            destination=replacement_ref,
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        )
+        replace_job = client.query(
+            _build_state_replacement_sql(table_ref, staging_ref),
+            job_config=query_job_config,
+        )
+        print(f"[*] Submitted state replacement SELECT job {replace_job.job_id} -> "
+              f"{replacement_ref}", file=sys.stderr)
+        replace_job.result()
+        if replace_job.errors:
+            print(f"[!] State replacement errors: {replace_job.errors}", file=sys.stderr)
+            raise RuntimeError("BigQuery pipeline_state replacement query had errors")
+
+        copy_job_config = bigquery.CopyJobConfig(
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE
+        )
+        copy_job = client.copy_table(
+            replacement_ref,
+            table_ref,
+            job_config=copy_job_config,
+            location=location,
+        )
+        print(f"[*] Submitted state overwrite copy job {copy_job.job_id} -> "
+              f"{table_ref}", file=sys.stderr)
+        copy_job.result()
+        if copy_job.errors:
+            print(f"[!] State copy errors: {copy_job.errors}", file=sys.stderr)
+            raise RuntimeError("BigQuery pipeline_state overwrite copy job had errors")
+    finally:
+        client.delete_table(staging_ref, not_found_ok=True)
+        client.delete_table(replacement_ref, not_found_ok=True)
+
     print(f"[+] Updated pipeline state `{state_name}`", file=sys.stderr)
 
 

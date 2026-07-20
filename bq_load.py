@@ -1,8 +1,9 @@
 """
 BigQuery loader untuk media-monitoring.
 
-Strategi: load ke staging table lalu MERGE ke `az_daily_news_collection.articles`.
-Re-run/overlap window tidak menambah row baru untuk artikel dengan `id` yang sama.
+Strategi: load ke staging table, build deduped replacement table dengan SELECT,
+lalu overwrite target via copy job. Ini idempotent tanpa BigQuery DML/MERGE,
+jadi tetap jalan di project BigQuery free tier tanpa billing.
 
 Usage:
     # Lokal (pakai service account JSON)
@@ -88,35 +89,33 @@ def to_ndjson(rows: list[dict], out_path: Path) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _build_article_merge_sql(table_ref: str, staging_ref: str) -> str:
-    columns = [field.name for field in BQ_SCHEMA]
-    update_assignments = ",\n    ".join(
-        f"T.`{column}` = S.`{column}`"
-        for column in columns
-        if column != "id"
+def _create_articles_table(client: bigquery.Client, table_ref: str) -> None:
+    bq_table = bigquery.Table(table_ref, schema=BQ_SCHEMA)
+    bq_table.time_partitioning = bigquery.TimePartitioning(
+        type_=bigquery.TimePartitioningType.DAY,
+        field="date",
     )
-    insert_columns = ", ".join(f"`{column}`" for column in columns)
-    insert_values = ", ".join(f"S.`{column}`" for column in columns)
+    bq_table.clustering_fields = ["id", "category", "subcategory"]
+    client.create_table(bq_table)
+
+
+def _build_article_replacement_sql(table_ref: str, staging_ref: str) -> str:
+    columns = [field.name for field in BQ_SCHEMA]
+    select_columns = ", ".join(f"`{column}`" for column in columns)
 
     return f"""
-MERGE `{table_ref}` T
-USING (
-  SELECT * EXCEPT(rn)
+SELECT {select_columns}
+FROM (
+  SELECT
+    {select_columns},
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY scraped_at DESC) AS rn
   FROM (
-    SELECT
-      *,
-      ROW_NUMBER() OVER (PARTITION BY id ORDER BY scraped_at DESC) AS rn
-    FROM `{staging_ref}`
+    SELECT {select_columns} FROM `{table_ref}`
+    UNION ALL
+    SELECT {select_columns} FROM `{staging_ref}`
   )
-  WHERE rn = 1
-) S
-ON T.`id` = S.`id`
-WHEN MATCHED THEN
-  UPDATE SET
-    {update_assignments}
-WHEN NOT MATCHED THEN
-  INSERT ({insert_columns})
-  VALUES ({insert_values})
+)
+WHERE rn = 1
 """
 
 
@@ -127,10 +126,11 @@ def load_to_bigquery(
     table: str,
     location: str = DEFAULT_LOCATION,
 ) -> None:
-    """Upsert rows ke BigQuery by article id."""
+    """Upsert rows ke BigQuery by article id without DML."""
     client = bigquery.Client(project=project_id, location=location)
     table_ref = f"{project_id}.{dataset}.{table}"
     staging_ref = f"{project_id}.{dataset}.staging_articles_{uuid.uuid4().hex}"
+    replacement_ref = f"{project_id}.{dataset}.replacement_articles_{uuid.uuid4().hex}"
 
     ndjson_path = Path("_bq_load_tmp.ndjson")
     to_ndjson(rows, ndjson_path)
@@ -153,22 +153,44 @@ def load_to_bigquery(
             print(f"[!] Job errors: {job.errors}", file=sys.stderr)
             raise RuntimeError("BigQuery load job had errors")
 
-        merge_job = client.query(_build_article_merge_sql(table_ref, staging_ref))
-        print(f"[*] Submitted MERGE job {merge_job.job_id} -> {table_ref}",
-              file=sys.stderr)
-        merge_job.result()
-        if merge_job.errors:
-            print(f"[!] MERGE errors: {merge_job.errors}", file=sys.stderr)
-            raise RuntimeError("BigQuery MERGE job had errors")
-
-        affected_rows = merge_job.num_dml_affected_rows
-        print(
-            f"[+] Staged {job.output_rows} rows; MERGE affected "
-            f"{affected_rows if affected_rows is not None else 'unknown'} rows",
-            file=sys.stderr,
+        _create_articles_table(client, replacement_ref)
+        query_job_config = bigquery.QueryJobConfig(
+            destination=replacement_ref,
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
         )
+        replace_job = client.query(
+            _build_article_replacement_sql(table_ref, staging_ref),
+            job_config=query_job_config,
+        )
+        print(f"[*] Submitted replacement SELECT job {replace_job.job_id} -> "
+              f"{replacement_ref}", file=sys.stderr)
+        replace_job.result()
+        if replace_job.errors:
+            print(f"[!] Replacement query errors: {replace_job.errors}", file=sys.stderr)
+            raise RuntimeError("BigQuery replacement query had errors")
+
+        copy_job_config = bigquery.CopyJobConfig(
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE
+        )
+        copy_job = client.copy_table(
+            replacement_ref,
+            table_ref,
+            job_config=copy_job_config,
+            location=location,
+        )
+        print(f"[*] Submitted overwrite copy job {copy_job.job_id} -> {table_ref}",
+              file=sys.stderr)
+        copy_job.result()
+        if copy_job.errors:
+            print(f"[!] Copy errors: {copy_job.errors}", file=sys.stderr)
+            raise RuntimeError("BigQuery overwrite copy job had errors")
+
+        final_table = client.get_table(table_ref)
+        print(f"[+] Staged {job.output_rows} rows; target now has "
+              f"{final_table.num_rows} deduped rows", file=sys.stderr)
     finally:
         client.delete_table(staging_ref, not_found_ok=True)
+        client.delete_table(replacement_ref, not_found_ok=True)
         ndjson_path.unlink(missing_ok=True)
 
 
