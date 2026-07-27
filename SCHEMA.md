@@ -1,193 +1,174 @@
-# Data Schema — AstraZeneca News Monitoring
+# Data Schema
 
-Dokumentasi field di CSV output, beserta padanan tipe data PostgreSQL dan TypeScript untuk Next.js.
+Current production storage is BigQuery, not PostgreSQL.
 
-## CSV Columns
+Schema source of truth:
 
-| Column | Type (CSV) | Description | Example |
-|---|---|---|---|
-| `id` | string (12 char) | Stable hash dari URL — primary key | `62efc2831d4a` |
-| `title` | string | Judul artikel asli | `AstraZeneca Indonesia umumkan...` |
-| `summary` | string | Ringkasan 1-3 kalimat (rule-based atau AI) | `AstraZeneca dan Kemenkes...` |
-| `source` | string | Nama publikasi | `Kompas.com`, `Detik Health` |
-| `url` | string | URL artikel asli | `https://www.cnbcindonesia.com/...` |
-| `published_at` | ISO 8601 datetime | Waktu publish artikel (timezone-aware) | `2025-05-27T15:30:00+07:00` |
-| `scraped_at` | ISO 8601 datetime | Waktu sistem fetch (selalu UTC) | `2026-05-11T07:11:01+00:00` |
-| `category` | enum | Klasifikasi konten | `Corporate`, `Product`, `Regulatory`, `Crisis`, `Competitor`, `Industry` |
-| `sentiment` | enum | Label sentimen | `Positive`, `Neutral`, `Negative` |
-| `sentiment_score` | float | Skor numerik -1.0 sd +1.0 | `-1.00`, `0.50`, `1.00` |
-| `priority` | enum | Tingkat urgensi untuk CLT | `Critical`, `High`, `Normal`, `Low` |
-| `language` | string (2 char) | ISO 639-1 language code | `id`, `en` |
-| `keywords` | string (CSV-in-CSV) | Top-N kata kunci, dipisah koma | `kanker, paru, indonesia` |
-
-## PostgreSQL DDL
-
-```sql
-CREATE TYPE article_category AS ENUM (
-  'Corporate', 'Product', 'Regulatory', 'Crisis', 'Competitor', 'Industry'
-);
-
-CREATE TYPE article_sentiment AS ENUM ('Positive', 'Neutral', 'Negative');
-
-CREATE TYPE article_priority AS ENUM ('Critical', 'High', 'Normal', 'Low');
-
-CREATE TABLE articles (
-  id              VARCHAR(12) PRIMARY KEY,
-  title           TEXT NOT NULL,
-  summary         TEXT,
-  source          VARCHAR(100) NOT NULL,
-  url             TEXT NOT NULL UNIQUE,
-  published_at    TIMESTAMPTZ NOT NULL,
-  scraped_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  category        article_category NOT NULL DEFAULT 'Industry',
-  sentiment       article_sentiment NOT NULL DEFAULT 'Neutral',
-  sentiment_score NUMERIC(3,2) NOT NULL DEFAULT 0.0,
-  priority        article_priority NOT NULL DEFAULT 'Normal',
-  language        CHAR(2) NOT NULL DEFAULT 'id',
-  keywords        TEXT,
-  
-  -- Audit fields untuk pharma compliance
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_articles_published_at ON articles(published_at DESC);
-CREATE INDEX idx_articles_priority ON articles(priority, published_at DESC);
-CREATE INDEX idx_articles_category ON articles(category);
-CREATE INDEX idx_articles_sentiment ON articles(sentiment);
-CREATE INDEX idx_articles_source ON articles(source);
-
--- Full-text search di title + summary (Bahasa Indonesia + English)
-CREATE INDEX idx_articles_fts ON articles 
-  USING GIN(to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(summary, '')));
+```text
+infrastructure/bq_schema.sql
 ```
 
-## TypeScript Types (Next.js)
+Scraper output source of truth:
 
-```typescript
-// types/article.ts
-
-export type ArticleCategory = 
-  | 'Corporate' 
-  | 'Product' 
-  | 'Regulatory' 
-  | 'Crisis' 
-  | 'Competitor' 
-  | 'Industry';
-
-export type ArticleSentiment = 'Positive' | 'Neutral' | 'Negative';
-
-export type ArticlePriority = 'Critical' | 'High' | 'Normal' | 'Low';
-
-export interface Article {
-  id: string;
-  title: string;
-  summary: string;
-  source: string;
-  url: string;
-  publishedAt: string;   // ISO 8601
-  scrapedAt: string;     // ISO 8601
-  category: ArticleCategory;
-  sentiment: ArticleSentiment;
-  sentimentScore: number; // -1.0 to 1.0
-  priority: ArticlePriority;
-  language: 'id' | 'en';
-  keywords: string;       // comma-separated
-}
+```text
+news_pipeline/output.py
 ```
 
-## Load CSV ke PostgreSQL
+## Main Article Pipeline
 
-```sql
--- Cara cepat via COPY (paling efisien untuk batch)
-COPY articles(id, title, summary, source, url, published_at, scraped_at,
-              category, sentiment, sentiment_score, priority, language, keywords)
-FROM '/path/to/astrazeneca_news.csv'
-DELIMITER ','
-CSV HEADER
-ON CONFLICT (id) DO UPDATE SET
-  scraped_at = EXCLUDED.scraped_at,
-  sentiment = EXCLUDED.sentiment,
-  sentiment_score = EXCLUDED.sentiment_score,
-  priority = EXCLUDED.priority;
-```
+`fetch_news.py` writes `news.json` and `news.csv`. The workflow then loads `news.json` with `bq_load.py`.
 
-Atau pakai Node.js di Next.js:
+Output columns:
 
-```typescript
-// scripts/import-csv.ts
-import { parse } from 'csv-parse/sync';
-import { readFileSync } from 'fs';
-import { db } from '@/lib/db';
+| Column | Type | Notes |
+|---|---|---|
+| `id` | string | 12-char stable SHA-256 hash from canonical article URL |
+| `headline` | string | English headline, primary UI display |
+| `headline_id` | string | Original Indonesian headline from RSS |
+| `url` | string | Resolved article URL |
+| `date` | ISO timestamp | Article publish time |
+| `source` | string | Publication name parsed from Google News title |
+| `summary` | string | English summary |
+| `summary_id` | string | Indonesian summary |
+| `category` | string | Top-level category |
+| `subcategory` | string/null | Subcategory where applicable |
+| `sentiment` | string | `Positive`, `Neutral`, or `Negative` |
+| `keywords` | string | English comma-separated keywords |
+| `keywords_id` | string | Indonesian comma-separated keywords |
+| `city` | string | Indonesian city focus, or empty |
+| `province` | string | Indonesian province focus, or empty |
+| `language` | string | Kept for compatibility; usually `en` after bilingual pipeline |
+| `scraped_at` | ISO timestamp | Loader/scraper processing timestamp |
 
-const csv = readFileSync('astrazeneca_news.csv', 'utf-8');
-const rows = parse(csv, { columns: true, skip_empty_lines: true });
+## Taxonomy
 
-for (const row of rows) {
-  await db.article.upsert({
-    where: { id: row.id },
-    create: {
-      id: row.id,
-      title: row.title,
-      summary: row.summary,
-      source: row.source,
-      url: row.url,
-      publishedAt: new Date(row.published_at),
-      scrapedAt: new Date(row.scraped_at),
-      category: row.category,
-      sentiment: row.sentiment,
-      sentimentScore: parseFloat(row.sentiment_score),
-      priority: row.priority,
-      language: row.language,
-      keywords: row.keywords,
-    },
-    update: {
-      scrapedAt: new Date(row.scraped_at),
-      sentiment: row.sentiment,
-      sentimentScore: parseFloat(row.sentiment_score),
-      priority: row.priority,
-    },
-  });
-}
-```
+Top-level categories:
 
-## Priority Logic (cara sistem decide)
-
-| Kondisi | Priority |
+| Category | Meaning |
 |---|---|
-| `category = Crisis` | **Critical** |
-| `category = Regulatory` AND `sentiment = Negative` | **Critical** |
-| `sentiment = Negative` AND `sentiment_score ≤ -0.5` | **High** |
-| `category in (Regulatory, Product)` | **High** |
-| Lainnya | **Normal** |
+| `About AstraZeneca` | AstraZeneca is the main topic or mentioned materially |
+| `Regulatory/Policy` | Health, pharma, market access, BPOM, Kemenkes, BPJS, DPR, or policy coverage |
+| `Crisis & Disruption` | Events that can disrupt healthcare, pharma operations, supply, or access |
 
-Threshold ini bisa disesuaikan di `fetch_news.py` fungsi `assess_priority()` sesuai kebutuhan CLT.
+Subcategories:
 
-## Category Detection Logic
+| Subcategory | Parent category |
+|---|---|
+| `AZ Focus` | `About AstraZeneca` |
+| `AZ Mentioned` | `About AstraZeneca` |
+| `Stakeholder & Regulator` | `Regulatory/Policy` |
+| `Pharma Policy` | `Regulatory/Policy` |
+| `General Health Regulation` | `Regulatory/Policy` |
 
-System scan title + body untuk keyword berikut (urutan priority):
+`Crisis & Disruption` is stored as a standalone category. Its `subcategory` is `NULL`.
 
-1. **Crisis** — krisis, tarik, recall, tuntutan, gugat, skandal, kontroversi, investigasi, hoaks
-2. **Regulatory** — bpom, kemenkes, izin edar, regulasi, fda, ema, approval, bpjs, jkn, formularium
-3. **Product** — vaksin, obat, [nama produk AZ], uji klinis, fase 3, indikasi, terapi
-4. **Competitor** — pfizer, roche, novartis, gsk, merck, msd, sanofi, bayer
-5. **Corporate** — investasi, ekspansi, ceo, csr, kemitraan, mou, penghargaan
-6. **Industry** — default fallback
+The model can also emit `Not Relevant`; those articles are skipped and not loaded.
 
-Untuk akurasi production, gunakan flag `--use-claude` yang memakai Claude API.
+## BigQuery Objects
 
-## Sentiment Logic
+### `articles`
 
-Default: lexicon-based scoring di kamus POSITIVE_WORDS dan NEGATIVE_WORDS (Bahasa Indonesia).
+Raw table for main article rows.
 
-Formula: `score = (positive_count - negative_count) / total_count`
+Important design points:
 
-Threshold label:
-- `score ≥ 0.25` → **Positive**
-- `score ≤ -0.25` → **Negative**
-- Antara → **Neutral**
+| Property | Value |
+|---|---|
+| Partition | `DATE(date)` |
+| Cluster | `id`, `category`, `subcategory` |
+| Loader | `bq_load.py` |
+| Dedupe key | `id` |
 
-Untuk production yang lebih akurat, opsi:
-1. `--use-claude` — pakai Claude API (paling akurat, ada biaya per call)
-2. Replace dengan IndoBERT-sentiment dari HuggingFace (one-time setup, free)
-3. Pakai Azure AI Language sentiment analysis (jika sudah ada Azure subscription)
+The loader avoids DML/MERGE. It loads new rows into a staging table, builds a deduped replacement table, then copies it over `articles`.
+
+### `articles_latest`
+
+Compatibility and dedupe view. It returns one latest row per `id`, ordered by `scraped_at DESC`.
+
+The frontend should query this view for normal reads.
+
+### `articles_last_24h`
+
+Legacy compatibility view for rolling 24-hour reads.
+
+The current UI concept uses "Latest News" date framing, so this view should not be treated as the main product definition.
+
+### `competitor_articles`
+
+Raw table for competitor count tracking.
+
+| Property | Value |
+|---|---|
+| Partition | `DATE(published_at)` |
+| Cluster | `company` |
+| Loader | `bq_load_competitors.py` |
+| Dedupe key | `company`, `url` |
+
+### `competitor_articles_latest`
+
+One latest row per `company + url`, ordered by `scraped_at DESC`.
+
+### `pipeline_state`
+
+Stores the last successful main scrape/load completion timestamp.
+
+Used by:
+
+```text
+compute_scrape_window.py
+update_pipeline_state.py
+.github/workflows/scrape.yml
+```
+
+This lets scheduled runs use:
+
+```text
+last_success_at -> now + buffer
+```
+
+instead of a fixed 24-hour window.
+
+## URL Identity
+
+Article identity is based on canonicalized URL before `make_article_id(url)`.
+
+Canonicalization removes common duplicate forms:
+
+| Example | Handling |
+|---|---|
+| `/amp` path segment | removed |
+| `amp.` or `m.` host prefix | normalized to `www.` |
+| `utm_*`, `fbclid`, `gclid`, etc. | removed |
+| `?page=all` or other `page` query | removed |
+| `sindonews.com/newsread/...` | normalized to `/read/...` |
+
+The canonicalization helper lives in:
+
+```text
+news_pipeline/url_utils.py
+```
+
+## Frontend Types
+
+Frontend domain types live in:
+
+```text
+web/src/lib/types.ts
+```
+
+The BigQuery repository maps raw rows to those types in:
+
+```text
+web/src/lib/repositories/bigquery-article-repository.ts
+```
+
+## Operational Notes
+
+Because GitHub Actions schedules can be delayed or skipped, correctness comes from:
+
+1. Dynamic scrape window via `pipeline_state`.
+2. URL canonicalization before article id creation.
+3. BigQuery dedupe loaders.
+4. Frontend reads from latest/deduped views.
+
+This design is appropriate for the current small dataset and BigQuery free-tier constraints. If data volume grows significantly, replace full-table dedupe overwrite with a billing-enabled MERGE strategy or move high-traffic reads to a query layer with pagination and server-side filters.

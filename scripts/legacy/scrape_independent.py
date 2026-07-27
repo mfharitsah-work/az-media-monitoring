@@ -6,12 +6,12 @@ Pipeline:
 2. Untuk tiap artikel: fetch body → kirim ke Groq → dapat ArticleAnalysis ter-validasi
 3. Print/save hasil
 
-Usage:
-    python scrape_independent.py                    # default: 5 artikel
-    python scrape_independent.py --limit 10
-    python scrape_independent.py --output independent.csv
+Legacy usage from repository root:
+    python scripts/legacy/scrape_independent.py
+    python scripts/legacy/scrape_independent.py --limit 10
+    python scripts/legacy/scrape_independent.py --output independent.csv
 
-Reuse dari fetch_news.py:
+Reuse dari news_pipeline:
 - GroqClient (LM call dengan strict JSON Schema)
 - ArticleAnalysis (Pydantic schema response)
 - fetch_article_text (body scraper umum)
@@ -34,15 +34,13 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, os.path.dirname(__file__))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
-from fetch_news import (
-    USER_AGENT,
-    ArticleAnalysis,
-    GroqClient,
-    fetch_article_text,
-    make_article_id,
-)
+from news_pipeline.config import USER_AGENT
+from news_pipeline.extraction import fetch_article_text
+from news_pipeline.groq_analysis import ArticleAnalysis, GroqClient
+from news_pipeline.url_utils import make_article_id
 
 
 TOPIC_URL = "https://www.independent.co.uk/topic/astrazeneca"
@@ -158,7 +156,7 @@ def main() -> int:
     p.add_argument("--output", default="independent_az.csv", help="Output CSV path")
     args = p.parse_args()
 
-    load_env_file(Path(__file__).parent / ".env")
+    load_env_file(REPO_ROOT / ".env")
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         print("[!] GROQ_API_KEY tidak ada. Set di .env atau env var.", file=sys.stderr)

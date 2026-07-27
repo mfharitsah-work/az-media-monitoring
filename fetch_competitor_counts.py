@@ -35,16 +35,16 @@ from urllib.parse import quote_plus, urlparse
 import feedparser
 from dateutil import parser as date_parser
 
-# Reuse helpers + constants dari main scraper. Tidak duplicate biar konsisten
-# saat SOURCE_WHITELIST atau URL decoder berubah.
-from fetch_news import (
+from news_pipeline.config import (
     GOOGLE_NEWS_RSS,
     JUNK_TITLE_RE,
     SOURCE_WHITELIST,
     USER_AGENT,
+)
+from news_pipeline.extraction import resolve_google_news_url
+from news_pipeline.url_utils import (
     canonicalize_article_url,
     is_whitelisted_source,
-    resolve_google_news_url,
 )
 
 

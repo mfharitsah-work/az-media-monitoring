@@ -1,5 +1,8 @@
 """
-Translate semua artikel non-English di BigQuery ke English (Groq Cloud).
+LEGACY: translate older non-English BigQuery rows to English.
+
+Not part of the active GitHub Actions pipeline. The current scraper already
+produces Indonesian and English fields in one Groq call.
 
 Pipeline:
   1. Query `articles_latest` → ambil rows WHERE language != 'en'.
@@ -23,11 +26,11 @@ Field di-set baru:
 
 Usage:
     # Mode A — translate dari BQ (default):
-    python translate_articles.py                    # translate semua non-en di BQ
-    python translate_articles.py --limit 5          # smoke test
+    python scripts/legacy/translate_articles.py
+    python scripts/legacy/translate_articles.py --limit 5
 
     # Mode B — translate dari JSON file (dipakai di GitHub Actions pipeline):
-    python translate_articles.py --input news.json --output news.json
+    python scripts/legacy/translate_articles.py --input news.json --output news.json
 """
 
 from __future__ import annotations
@@ -51,6 +54,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 DEFAULT_DATASET = "az_daily_news_collection"
 DEFAULT_LOCATION = "asia-southeast2"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -302,7 +306,7 @@ def save_json(articles: list[dict], path: Path) -> None:
 
 
 def main() -> int:
-    _load_env_file(Path(__file__).parent / ".env")
+    _load_env_file(REPO_ROOT / ".env")
 
     p = argparse.ArgumentParser(description="Translate AZ news articles id → en")
     p.add_argument("--output", default="translated_articles.json")

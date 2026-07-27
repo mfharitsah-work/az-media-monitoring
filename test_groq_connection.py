@@ -23,9 +23,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-
-from fetch_news import ArticleAnalysis, GroqClient
+from news_pipeline.groq_analysis import ArticleAnalysis, GroqClient, SUBCATEGORY_TO_CATEGORY
 
 
 SAMPLE_HEADLINE = "AstraZeneca - Kemenkes kolaborasi tangani penyakit tidak menular"
@@ -95,17 +93,22 @@ def main() -> int:
     print("\n[3/3] Verify typed object...")
     # Karena Pydantic sudah validate, di sini cukup assert tipe — bukan presence check
     assert isinstance(result, ArticleAnalysis), f"Expected ArticleAnalysis, got {type(result)}"
-    assert result.category in {"AstraZeneca", "Regulatory"}
+    assert result.subcategory in SUBCATEGORY_TO_CATEGORY or result.subcategory == "Not Relevant"
     assert result.sentiment in {"Positive", "Neutral", "Negative"}
     print("    OK — semua field bertipe benar dan masuk enum")
 
     print("\n" + "=" * 60)
     print(f"RESPONSE FROM GROQ ({client.model}):")
     print("=" * 60)
-    print(f"Summary    : {result.summary}")
-    print(f"Category   : {result.category}")
-    print(f"Sentiment  : {result.sentiment}")
-    print(f"Keywords   : {result.keywords}")
+    category = SUBCATEGORY_TO_CATEGORY.get(result.subcategory, "Not Relevant")
+    print(f"Headline EN : {result.headline_en}")
+    print(f"Summary ID  : {result.summary_id}")
+    print(f"Summary EN  : {result.summary_en}")
+    print(f"Category    : {category}")
+    print(f"Subcategory : {result.subcategory}")
+    print(f"Sentiment   : {result.sentiment}")
+    print(f"Keywords ID : {result.keywords_id}")
+    print(f"Keywords EN : {result.keywords_en}")
     print("=" * 60)
 
     print("\n    JSON serialized (untuk inspeksi):")

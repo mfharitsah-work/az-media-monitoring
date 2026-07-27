@@ -12,16 +12,19 @@ import { BigQuery } from "@google-cloud/bigquery";
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __bqClient: BigQuery | undefined;
 }
 
-function createClient(): BigQuery {
+function requireProjectId(): string {
   const projectId = process.env.GCP_PROJECT_ID;
   if (!projectId) {
     throw new Error("GCP_PROJECT_ID env var is required");
   }
+  return projectId;
+}
 
+function createClient(): BigQuery {
+  const projectId = requireProjectId();
   const location = process.env.BQ_LOCATION ?? "asia-southeast2";
 
   // Vercel/production: SA JSON sebagai string env var
@@ -51,6 +54,6 @@ export function dataset(): string {
 
 /** Fully qualified table/view name untuk query: `project.dataset.tableId` */
 export function tbl(name: string): string {
-  const projectId = process.env.GCP_PROJECT_ID;
+  const projectId = requireProjectId();
   return `\`${projectId}.${dataset()}.${name}\``;
 }

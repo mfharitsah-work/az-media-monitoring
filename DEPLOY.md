@@ -1,184 +1,225 @@
 # Deployment Guide
 
-End-to-end setup: GitHub repo → Vercel deployment → daily auto-scrape via GitHub Actions.
+End-to-end setup for AZ Media Monitoring:
 
-## Architecture overview
+1. GitHub repository stores the code.
+2. Vercel deploys the Next.js app from `web/`.
+3. GitHub Actions runs the scraper and loads data to BigQuery.
+4. The workflow calls `/api/revalidate` so the deployed app drops cached data.
 
+## Architecture
+
+```text
+GitHub Actions
+  - compute dynamic scrape window
+  - fetch_news.py
+  - bq_load.py
+  - update_pipeline_state.py
+  - fetch_competitor_counts.py
+  - bq_load_competitors.py
+  - POST /api/revalidate
+        |
+        v
+BigQuery dataset: az_daily_news_collection
+        |
+        v
+Vercel / Next.js app
+  - /
+  - /news
+  - /news/[id]
+  - /analytics
+  - /astrazeneca
+  - /sentiment
 ```
-   ┌─────────────────────────────────┐
-   │  GitHub Actions (cron 06:00 WIB)│
-   │  - run fetch_news.py            │      ┌───────────────┐
-   │  - run bq_load.py               │ ───► │   BigQuery    │
-   │  - POST /api/revalidate         │      │   (Jakarta)   │
-   └─────────────────────────────────┘      └───────┬───────┘
-                  │                                  │ queries
-                  ▼ revalidate                       │
-   ┌─────────────────────────────────┐               │
-   │  Vercel (Next.js)               │ ◄─────────────┘
-   │  - / /news /astrazeneca         │
-   │  - /sentiment /analytics        │
-   │  - /api/revalidate              │
-   └─────────────────────────────────┘
-```
 
-## Prerequisites
+## GitHub Repository
 
-- GitHub account
-- Vercel account (sign up at https://vercel.com — free tier OK)
-- GCP project + service account JSON (already set up — see `infrastructure/`)
-- Groq API key (already in local `.env`)
-
----
-
-## Step 1 — Push repo to GitHub
-
-### 1a. Create GitHub repo
-
-1. Open https://github.com/new
-2. Repository name: `media-monitoring` (atau bebas)
-3. **Private** (mengandung referensi project AZ — jangan public)
-4. **JANGAN** centang "Initialize with README" (kita sudah punya commit lokal)
-5. Klik **Create repository**
-
-### 1b. Push local repo
-
-GitHub akan menampilkan instruksi. Pakai yang **"push an existing repository"**:
+Create a private GitHub repository, then connect local `main` to the new origin:
 
 ```bash
-cd c:/Users/knrl389/Documents/projects/media-monitoring
-git remote add origin https://github.com/<your-username>/media-monitoring.git
+git remote set-url origin https://github.com/<owner>/<repo>.git
 git branch -M main
 git push -u origin main
 ```
 
-Sebelum push, **verifikasi tidak ada secret yang akan ke-commit**:
+Before pushing, confirm secrets and runtime outputs are not staged:
 
 ```bash
-git status        # tidak boleh ada .env, *.json (SA key), .venv
-git log --oneline # confirm 1 initial commit ada
+git status --short
 ```
 
----
+Do not commit `.env`, service account JSON files, `.venv`, `news.csv`, `news.json`, or `competitor_news.json`.
 
-## Step 2 — Deploy ke Vercel
+## Vercel
 
-### 2a. Import project
+Import the GitHub repo into Vercel.
 
-1. Login ke https://vercel.com
-2. **Add New** → **Project**
-3. Pilih repo `media-monitoring` (otorisasi GitHub kalau belum)
-4. **Configure Project**:
-   - **Framework Preset**: Next.js (auto-detect)
-   - **Root Directory**: klik **Edit** → `web` (penting!)
-   - **Build Command**, **Output Directory**: leave default
+Required project setting:
 
-### 2b. Set Environment Variables (di Vercel dashboard)
+| Setting | Value |
+|---|---|
+| Framework Preset | Next.js |
+| Root Directory | `web` |
+| Build Command | default |
+| Output Directory | default |
 
-Klik **Environment Variables**. Tambahkan 5 vars berikut. Semua → **All environments** (Production, Preview, Development):
+Required Vercel environment variables:
 
-| Key | Value source | Notes |
-|---|---|---|
-| `GCP_PROJECT_ID` | `.env` line `GCP_PROJECT_ID=` | Public-safe ID, OK untuk dilihat |
-| `BQ_DATASET` | `.env` line `BQ_DATASET=` | Public-safe |
-| `BQ_LOCATION` | `.env` line `BQ_LOCATION=` | Public-safe |
-| `GCP_SA_JSON` | `infrastructure/az-media-monitoring-*.json` (paste seluruh isi file) | Secret — JSON full content `{...}` |
-| `REVALIDATE_SECRET` | `web/.env.local` line `REVALIDATE_SECRET=` | Secret — copy paste value-nya |
+| Key | Notes |
+|---|---|
+| `GCP_PROJECT_ID` | GCP project id |
+| `BQ_DATASET` | Defaults to `az_daily_news_collection` if omitted |
+| `BQ_LOCATION` | Defaults to `asia-southeast2` if omitted |
+| `GCP_SA_JSON` | Full service account JSON content |
+| `REVALIDATE_SECRET` | Must match the GitHub Actions secret |
 
-**Cara dapatkan `GCP_SA_JSON`**: buka file `infrastructure/az-media-monitoring-dd3cf7eb59fc.json`, copy SEMUA isi (termasuk `{` dan `}`), paste ke Vercel value field.
+After deployment, smoke check:
 
-### 2c. Deploy
+```text
+https://<deployment>.vercel.app/
+https://<deployment>.vercel.app/news
+https://<deployment>.vercel.app/analytics
+https://<deployment>.vercel.app/api/revalidate
+```
 
-Klik **Deploy**. Tunggu ~2 menit. Setelah selesai, Vercel kasih URL seperti `https://media-monitoring-xxxx.vercel.app`. **Catat URL ini** — dipakai di Step 3.
+`/api/revalidate` should return `401` without an Authorization header.
 
-### 2d. Smoke test
+## GitHub Actions Secrets
 
-Buka URL Vercel di browser. Pastikan:
-- Landing page render dengan KPI cards
-- /news/, /astrazeneca, /sentiment, /analytics semua HTTP 200
-- /api/revalidate response 401 tanpa auth (security check)
+Open GitHub repo -> Settings -> Secrets and variables -> Actions, then add:
 
----
+| Secret | Notes |
+|---|---|
+| `GROQ_API_KEY` | Used by `fetch_news.py --use-groq` |
+| `GCP_PROJECT_ID` | Same project used by Vercel |
+| `GCP_SA_JSON` | Full service account JSON content |
+| `VERCEL_URL` | Production URL, for example `https://az-media-monitoring.vercel.app` |
+| `REVALIDATE_SECRET` | Same value as Vercel |
 
-## Step 3 — Setup GitHub Secrets untuk daily scrape
+Important: `VERCEL_URL` must include `https://`. If it is only a hostname or malformed secret value, the cache invalidation curl step can fail with `Could not resolve host`.
 
-Daily scrape jalan di GitHub Actions runner. Butuh akses ke Groq + BigQuery + Vercel revalidate endpoint.
+## Workflow Schedule
 
-1. Buka repo di GitHub → **Settings** → **Secrets and variables** → **Actions**
-2. Klik **New repository secret** untuk tiap secret berikut:
+Workflow file:
 
-| Name | Value source | Notes |
-|---|---|---|
-| `GROQ_API_KEY` | `.env` line `GROQ_API_KEY=` (di-quote/un-quote OK) | Secret |
-| `GCP_PROJECT_ID` | `.env` line `GCP_PROJECT_ID=` | Public-safe |
-| `GCP_SA_JSON` | `infrastructure/az-media-monitoring-*.json` (paste full content) | Secret — JSON full |
-| `REVALIDATE_SECRET` | `web/.env.local` line `REVALIDATE_SECRET=` (HARUS sama dengan Vercel) | Secret |
-| `VERCEL_URL` | Vercel deployment URL dari Step 2c (mis. `https://xxx.vercel.app`) | Public-safe |
+```text
+.github/workflows/scrape.yml
+```
 
----
+Current cron:
 
-## Step 4 — Verify automation end-to-end
+```yaml
+cron: "17 0,6,12,18 * * *"
+```
 
-### 4a. Trigger workflow manually
+Approximate WIB schedule:
 
-1. GitHub → repo → **Actions** tab
-2. Pilih workflow **"Daily News Scrape & Load"**
-3. Klik **Run workflow** (kanan atas)
-4. Opsional: ubah `hours` ke `48` untuk window lebih lebar
-5. Klik **Run workflow** (green button)
-6. Klik run yang baru muncul untuk lihat progress
+| UTC | WIB |
+|---|---|
+| 00:17 | 07:17 |
+| 06:17 | 13:17 |
+| 12:17 | 19:17 |
+| 18:17 | 01:17 next day |
 
-Verifikasi tiap step succeed:
-- ✅ Checkout
-- ✅ Setup Python
-- ✅ Install dependencies (~1-2 menit)
-- ✅ Authenticate to Google Cloud
-- ✅ Run scraper (~5-10 menit; Groq calls jadi bottleneck)
-- ✅ Load to BigQuery
-- ✅ Invalidate Vercel cache
-- ✅ Upload artifact
+GitHub scheduled workflows are not exact timers. Runs can be delayed or occasionally skipped, especially near busy times. The project handles this by computing a dynamic scrape window from `pipeline_state` instead of relying on a fixed 24-hour window.
 
-### 4b. Confirm data sampai web
+## Manual Workflow Test
 
-1. Buka Vercel URL → / atau /news
-2. Cek KPI cards menampilkan angka baru (incl. delta "+N today")
-3. Card terbaru harus ada di top list
+Open GitHub -> Actions -> Daily News Scrape & Load -> Run workflow.
 
-### 4c. Confirm cron schedule
+Useful test inputs:
 
-Workflow akan auto-trigger jam 23:00 UTC harian = **06:00 WIB**. Cek tab Actions besok pagi untuk konfirmasi run automatic muncul tanpa intervensi.
+| Input | Suggested value |
+|---|---|
+| `hours` | `6` for quick test, `24` for normal backfill |
+| `max_per_keyword` | `3` for quota-light test, `5` for normal run |
 
----
+Expected successful steps:
+
+```text
+Checkout
+Setup Python
+Install dependencies
+Authenticate to Google Cloud
+Compute scrape window
+Run scraper
+Load to BigQuery
+Update scrape state
+Scrape competitor counts
+Load competitor counts to BigQuery
+Invalidate Vercel cache
+Upload artifact
+```
+
+## BigQuery Setup
+
+Run the schema once from the repository root:
+
+```bash
+bq query --use_legacy_sql=false < infrastructure/bq_schema.sql
+```
+
+Main objects:
+
+| Object | Purpose |
+|---|---|
+| `articles` | Raw article table loaded idempotently |
+| `articles_latest` | 1 latest row per article id |
+| `articles_last_24h` | Legacy compatibility view |
+| `competitor_articles` | Competitor count table |
+| `competitor_articles_latest` | 1 latest row per company + URL |
+| `pipeline_state` | Last successful scrape timestamp |
+
+Loaders intentionally avoid BigQuery DML/MERGE so the project can run without billing enabled. They dedupe by building a replacement table and copying it over the target table.
+
+## Local Validation
+
+Python syntax:
+
+```bash
+python -m py_compile fetch_news.py fetch_competitor_counts.py bq_load.py bq_load_competitors.py compute_scrape_window.py update_pipeline_state.py
+```
+
+Frontend:
+
+```bash
+cd web
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+BigQuery smoke test:
+
+```bash
+cd web
+npx dotenv -e ../.env -- tsx scripts/smoke-test-dal.ts
+```
 
 ## Troubleshooting
 
-### Workflow gagal di "Authenticate to Google Cloud"
-- Pastikan `GCP_SA_JSON` di GitHub Secrets adalah JSON full (mulai `{` sampai `}`), bukan path file.
-- Pastikan SA punya role **BigQuery Data Editor** + **BigQuery Job User** (sudah di-grant saat setup awal).
+### Vercel returns 404 for every URL
 
-### Workflow sukses tapi data tidak update di web
-- Cek apakah step **"Invalidate Vercel cache"** menampilkan response 200. Kalau 401, secret `REVALIDATE_SECRET` di GitHub ≠ Vercel.
-- Workaround sementara: tunggu cache TTL 24 jam expired, atau manual hit `/api/revalidate` dengan correct auth.
+The Vercel Root Directory is usually wrong. Set it to `web`.
 
-### Vercel build error: "Cannot find module '@google-cloud/bigquery'"
-- Root Directory di Vercel salah. Set ke `web`.
+### Vercel runtime says `GCP_PROJECT_ID env var is required`
 
-### Vercel runtime error: "GCP_PROJECT_ID env var is required"
-- Env var di Vercel belum di-set, atau di-set tapi untuk environment yang salah. Pastikan tick **Production + Preview + Development**.
+Set the environment variable in the Vercel project for Production. Redeploy after changing env vars.
 
-### Daily cron tidak jalan
-- GitHub Actions free tier limit: 2000 menit/bulan. Daily scrape ~10 menit × 30 = 300 menit/bulan. Aman.
-- Cron di GitHub kadang delay 5-15 menit. Bukan exact 06:00 WIB.
-- Repo yang inactive 60 hari (tidak ada commit) bikin GitHub disable scheduled workflow. Solusi: minimal 1 commit per 2 bulan.
+### GitHub cache invalidation fails with `Could not resolve host`
 
----
+Check `VERCEL_URL`. It must look like:
 
-## Cost estimate (rough)
+```text
+https://az-media-monitoring.vercel.app
+```
 
-| Component | Free tier | Estimated usage | Notes |
-|---|---|---|---|
-| GitHub Actions | 2000 min/month | ~300 min/month | Daily 10-min run |
-| Vercel | 100GB bandwidth, 100K function invocations | < 1% utilization | Internal dashboard |
-| BigQuery | 10GB storage + 1TB query/month | < 1MB storage + < 100MB query | Tiny dataset |
-| Groq | 200K tokens/day | ~20-30K tokens/day | Daily 48h window |
+Do not store quoted strings with extra characters.
 
-Total expected monthly cost: **$0**.
+### Workflow does not run at the exact cron minute
+
+This is normal GitHub Actions behavior. Use the dynamic scrape window and BigQuery dedupe as the source of correctness, not exact timer precision.
+
+### BigQuery DML/MERGE fails because billing is disabled
+
+This project does not require DML for normal loads. If a DML error appears, verify you are running the current `bq_load.py` and `bq_load_competitors.py`.
