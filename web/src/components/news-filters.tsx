@@ -87,7 +87,9 @@ export function NewsFilters() {
     // Buang semua filter, pertahankan tab range (periode bukan filter).
     const params = new URLSearchParams();
     const range = searchParams.get("range");
-    if (range) params.set("range", range);
+    if (range === "latest" || range === "last-7-days" || range === "this-month") {
+      params.set("range", range);
+    }
     startTransition(() => {
       setOptimisticQ("");
       router.replace(params.toString() ? `?${params.toString()}` : "?", {
@@ -216,14 +218,16 @@ export function NewsFilters() {
       </div>
 
       {hasActiveFilters && (
-        <button
-          type="button"
-          onClick={clearFilters}
-          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <X className="h-3.5 w-3.5" />
-          Clear filters
-        </button>
+        <div className="flex items-center justify-end px-3">
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear filters
+          </button>
+        </div>
       )}
     </div>
   );
@@ -304,23 +308,20 @@ function DateRangePicker() {
             variant="outline"
             size="sm"
             onClick={() =>
-              setDraft({ from: addDays(today, -29), to: today })
+              setDraft({ from: addDays(today, -1), to: addDays(today, -1) })
             }
           >
-            Last 30 days
+            Yesterday
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() =>
-              setDraft({
-                from: new Date(today.getFullYear(), today.getMonth(), 1),
-                to: today,
-              })
+              setDraft({ from: addDays(today, -29), to: today })
             }
           >
-            This month
+            Last 30 days
           </Button>
         </div>
 
@@ -460,10 +461,22 @@ function FilterField({
 const RANGE_TABS = [
   { value: "latest", label: "Latest News" },
   { value: "last-7-days", label: "Last 7 days" },
-  { value: "all-time", label: "All Time" },
+  { value: "this-month", label: "This Month" },
 ] as const;
 
 export function RangeTabs({ activeRange }: { activeRange: string }) {
+  const searchParams = useSearchParams();
+
+  const hrefForRange = (range: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("range", range);
+    params.delete("from");
+    params.delete("to");
+    params.delete("date");
+    params.delete("page");
+    return `?${params.toString()}`;
+  };
+
   return (
     <div className="inline-flex rounded-md border bg-muted p-1">
       {RANGE_TABS.map((tab) => {
@@ -471,7 +484,7 @@ export function RangeTabs({ activeRange }: { activeRange: string }) {
         return (
           <Link
             key={tab.value}
-            href={`?range=${tab.value}`}
+            href={hrefForRange(tab.value)}
             className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
               isActive
                 ? "bg-background text-foreground shadow-sm"

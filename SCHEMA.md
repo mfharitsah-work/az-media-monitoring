@@ -95,7 +95,7 @@ The current UI concept uses "Latest News" date framing, so this view should not 
 
 ### `competitor_articles`
 
-Raw table for competitor count tracking.
+Legacy raw table for competitor count tracking.
 
 | Property | Value |
 |---|---|
@@ -108,6 +108,72 @@ Raw table for competitor count tracking.
 
 One latest row per `company + url`, ordered by `scraped_at DESC`.
 
+This remains for compatibility. New competitor pages should read from
+`competitor_news_latest`.
+
+### `competitor_news_articles`
+
+Raw table for full competitor news scraping.
+
+| Property | Value |
+|---|---|
+| Partition | `DATE(published_at)` |
+| Cluster | `company`, `id` |
+| Loader | `bq_load_competitor_news.py` |
+| Dedupe key | `id` = stable hash from `company + canonical_url` |
+
+Important columns:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | string | 16-char stable hash from company + canonical URL |
+| `company` | string | Canonical competitor name |
+| `headline` | string | RSS headline |
+| `url` | string | Canonicalized article URL |
+| `source` | string | Apex media domain |
+| `published_at` | ISO timestamp | RSS publish time |
+| `snippet` | string | RSS snippet/description |
+| `is_whitelisted_source` | bool | False can still be valid for Roche bypass |
+| `scraped_at` | ISO timestamp | Loader/scraper processing timestamp |
+
+### `competitor_news_articles_latest`
+
+One latest row per raw competitor article id.
+
+### `competitor_news_enrichment`
+
+Cerebras enrichment table for competitor news. It intentionally does not store
+sentiment.
+
+| Property | Value |
+|---|---|
+| Partition | `DATE(analyzed_at)` |
+| Cluster | `article_id`, `company` |
+| Loader | `bq_load_competitor_enrichment.py` |
+| Dedupe key | `article_id` |
+
+Important columns:
+
+| Column | Type | Notes |
+|---|---|---|
+| `article_id` | string | Logical FK to `competitor_news_articles.id` |
+| `summary` | string | English summary from Cerebras |
+| `keywords` | string | English comma-separated keywords |
+| `key_message` | string | Main competitor signal |
+| `relevance` | string | `Relevant` or `Not Relevant` |
+| `lm_model` | string | Model used for enrichment |
+| `analysis_status` | string | `analyzed`, `pending`, `skipped`, or `failed` |
+| `analysis_error` | string | Short skip/failure reason |
+
+### `competitor_news_latest`
+
+Joined view from `competitor_news_articles_latest` and
+`competitor_news_enrichment_latest`.
+
+The frontend `/competitors` page reads this view. Share of Voice can count from
+`competitor_news_articles_latest` and falls back to the legacy
+`competitor_articles_latest` table while the new pipeline is being rolled out.
+
 ### `pipeline_state`
 
 Stores the last successful main scrape/load completion timestamp.
@@ -118,6 +184,7 @@ Used by:
 compute_scrape_window.py
 update_pipeline_state.py
 .github/workflows/scrape.yml
+.github/workflows/competitor-news.yml
 ```
 
 This lets scheduled runs use:

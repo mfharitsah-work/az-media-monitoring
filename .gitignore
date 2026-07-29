@@ -41,3 +41,5 @@ Thumbs.db
 news.csv
 news.json
 competitor_news.json
+competitor_news_raw.json
+competitor_news_enrichment.json

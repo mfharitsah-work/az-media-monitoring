@@ -94,6 +94,57 @@ export type ArticleSubcategory = z.infer<typeof ArticleSubcategorySchema>;
 export type ArticleSentiment = z.infer<typeof ArticleSentimentSchema>;
 
 // =============================================================================
+// Competitor news
+// =============================================================================
+
+export const CompetitorCompanySchema = z.enum([
+  "Bayer Indonesia",
+  "GSK Indonesia",
+  "MSD Indonesia",
+  "Novartis Indonesia",
+  "Novo Nordisk Indonesia",
+  "Pfizer Indonesia",
+  "PT Merck Tbk",
+  "Roche Indonesia",
+  "Takeda Indonesia",
+]);
+
+export const CompetitorAnalysisStatusSchema = z.enum([
+  "pending",
+  "analyzed",
+  "skipped",
+  "failed",
+]);
+
+export const CompetitorRelevanceSchema = z.enum(["Relevant", "Not Relevant"]);
+
+export const CompetitorNewsArticleSchema = z.object({
+  id: z.string(),
+  company: CompetitorCompanySchema,
+  headline: z.string(),
+  url: z.url(),
+  canonical_url: z.url(),
+  source: z.string().nullable(),
+  published_at: z.string(),
+  snippet: z.string().nullable(),
+  matched_query: z.string().nullable(),
+  is_whitelisted_source: z.boolean().nullable(),
+  scraped_at: z.string(),
+  summary: z.string().nullable(),
+  keywords: z.string().nullable(),
+  key_message: z.string().nullable(),
+  relevance: CompetitorRelevanceSchema.nullable(),
+  analysis_status: CompetitorAnalysisStatusSchema,
+  analysis_error: z.string().nullable(),
+  lm_model: z.string().nullable(),
+  analyzed_at: z.string().nullable(),
+});
+
+export type CompetitorCompany = z.infer<typeof CompetitorCompanySchema>;
+export type CompetitorAnalysisStatus = z.infer<typeof CompetitorAnalysisStatusSchema>;
+export type CompetitorNewsArticle = z.infer<typeof CompetitorNewsArticleSchema>;
+
+// =============================================================================
 // Filter / query params untuk list pages
 // =============================================================================
 
@@ -108,6 +159,7 @@ export type DateRange =
   | "yesterday"
   | "today"
   | "last-7-days"
+  | "this-month"
   | "all-time"
   | "custom"
   | `h1-${number}`
@@ -128,6 +180,16 @@ export interface ArticleListFilters {
   subcategories?: ArticleSubcategory[];
   sentiment?: ArticleSentiment;
   /** Pagination */
+  limit?: number;
+  offset?: number;
+}
+
+export interface CompetitorNewsFilters {
+  range: DateRange;
+  customDateFrom?: string;
+  customDateTo?: string;
+  q?: string;
+  companies?: CompetitorCompany[];
   limit?: number;
   offset?: number;
 }
@@ -169,6 +231,7 @@ export interface SubcategoryBreakdown {
  */
 export type AnalyticsRange =
   | "last-7-days"
+  | "this-month"
   | "all-time"
   | `h1-${number}`
   | `h2-${number}`;
@@ -186,8 +249,7 @@ export function parseSemester(range: string): { half: 1 | 2; year: number } | nu
 
 /** Type guard: cek string adalah AnalyticsRange valid. */
 export function isAnalyticsRange(s: string): s is AnalyticsRange {
-  if (s === "last-7-days" || s === "all-time") return true;
-  return parseSemester(s) !== null;
+  return s === "last-7-days" || s === "this-month";
 }
 
 export interface TopSource {
@@ -232,7 +294,7 @@ export interface AllTimeKpi {
   /** Total articles all-time */
   total: number;
 
-  /** Net sentiment all-time (Positive − Negative) */
+  /** AZ-only net sentiment all-time (Positive - Negative) */
   netSentiment: number;
   positiveCount: number;
   negativeCount: number;
@@ -242,6 +304,9 @@ export interface AllTimeKpi {
   azRelatedTotal: number;
   azFocusCount: number;
   azMentionedCount: number;
+  azPositiveCount: number;
+  azNegativeCount: number;
+  azNeutralCount: number;
 }
 
 /**
@@ -253,7 +318,7 @@ export interface AllTimeKpi {
 export interface DailyKpi extends AllTimeKpi {
   /** Articles published in Latest News window */
   totalLatest: number;
-  /** Latest News contribution to net sentiment */
+  /** Latest News contribution to AZ-only net sentiment */
   netSentimentLatest: number;
   /** Latest News contribution to AZ Related (Focus + Mentioned) */
   azRelatedLatest: number;

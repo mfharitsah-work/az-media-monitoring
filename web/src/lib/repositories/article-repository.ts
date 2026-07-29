@@ -3,6 +3,9 @@ import type {
   AnalyticsRange,
   Article,
   ArticleListFilters,
+  CompetitorCompany,
+  CompetitorNewsArticle,
+  CompetitorNewsFilters,
   DailyKpi,
   DateBounds,
   SentimentTrendPoint,
@@ -42,6 +45,15 @@ export interface ArticleRepository {
     items: Article[];
     total: number;
   }>;
+
+  /** Generic list with filters for the dedicated Competitor News page */
+  findCompetitorNews(filters: CompetitorNewsFilters): Promise<{
+    items: CompetitorNewsArticle[];
+    total: number;
+  }>;
+
+  /** Canonical company values available for competitor filtering */
+  competitorCompanies(): Promise<CompetitorCompany[]>;
 
   // ===========================================================================
   // KPI / Analytics

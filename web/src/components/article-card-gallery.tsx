@@ -10,7 +10,7 @@ import {
 import type { Article } from "@/lib/types";
 
 /**
- * Gallery card — kompak, untuk grid 2-3 kolom (Last 7d / All Time / Custom).
+ * Gallery card — kompak, untuk grid 2-3 kolom (Last 7d / This Month / Custom).
  * Click → /news/[id] untuk detail.
  *
  * Beda dengan ArticleCardLandscape:

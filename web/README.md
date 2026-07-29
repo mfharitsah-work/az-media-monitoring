@@ -32,6 +32,7 @@ npm run dev
 ## Validation
 
 ```bash
+npm test
 npm run lint
 npx tsc --noEmit
 npm run build
@@ -50,7 +51,9 @@ npx dotenv -e ../.env -- tsx scripts/smoke-test-dal.ts
 | `src/app/page.tsx` | Home dashboard |
 | `src/app/news/page.tsx` | All news page |
 | `src/app/news/[id]/page.tsx` | Article detail page |
+| `src/app/competitors/page.tsx` | Competitor news page |
 | `src/app/analytics/page.tsx` | Analytics dashboard |
+| `src/components/competitor-news-filters.tsx` | Competitor news filter UI |
 | `src/components/email-digest-launcher.tsx` | Daily digest compose UI |
 | `src/lib/repositories/bigquery-article-repository.ts` | BigQuery data access |
 | `src/lib/types.ts` | Frontend domain types |

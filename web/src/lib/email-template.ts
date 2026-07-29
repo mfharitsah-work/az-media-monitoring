@@ -1,4 +1,4 @@
-import type { Article, ArticleCategory } from "@/lib/types";
+import type { Article, ArticleCategory } from "./types";
 
 /**
  * Builder email digest harian. Menghasilkan DUA bentuk:

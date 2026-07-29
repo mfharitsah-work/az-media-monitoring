@@ -94,6 +94,105 @@ FROM (
 WHERE rn = 1;
 
 -- =============================================================================
+-- TABLE: competitor_news_articles
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `az_daily_news_collection.competitor_news_articles` (
+  id                     STRING    NOT NULL OPTIONS(description="16-char stable hash dari company + canonical URL"),
+  company                STRING    NOT NULL OPTIONS(description="Nama kompetitor canonical"),
+  headline               STRING    NOT NULL OPTIONS(description="Headline dari RSS Google News"),
+  url                    STRING    NOT NULL OPTIONS(description="Canonicalized article URL"),
+  canonical_url          STRING    NOT NULL OPTIONS(description="Canonicalized article URL for identity/dedupe"),
+  source                 STRING             OPTIONS(description="Apex domain publikasi, mis. detik.com"),
+  published_at           TIMESTAMP NOT NULL OPTIONS(description="published_at dari RSS feed"),
+  snippet                STRING             OPTIONS(description="Snippet/description dari RSS feed"),
+  matched_query          STRING             OPTIONS(description="Query competitor yang menemukan artikel"),
+  is_whitelisted_source  BOOL               OPTIONS(description="True kalau domain ada di SOURCE_WHITELIST"),
+  scraped_at             TIMESTAMP NOT NULL OPTIONS(description="Waktu loader meng-upsert row ini")
+)
+PARTITION BY DATE(published_at)
+CLUSTER BY company, id
+OPTIONS(
+  description="Raw competitor news articles loaded idempotently by non-DML dedup overwrite.",
+  partition_expiration_days=NULL
+);
+
+-- =============================================================================
+-- VIEW: competitor_news_articles_latest (1 row per company + canonical URL)
+-- =============================================================================
+CREATE OR REPLACE VIEW `az_daily_news_collection.competitor_news_articles_latest` AS
+SELECT * EXCEPT(rn)
+FROM (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY scraped_at DESC) AS rn
+  FROM `az_daily_news_collection.competitor_news_articles`
+)
+WHERE rn = 1;
+
+-- =============================================================================
+-- TABLE: competitor_news_enrichment
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `az_daily_news_collection.competitor_news_enrichment` (
+  article_id       STRING    NOT NULL OPTIONS(description="FK logical ke competitor_news_articles.id"),
+  company          STRING    NOT NULL OPTIONS(description="Nama kompetitor canonical"),
+  summary          STRING             OPTIONS(description="English summary dari LM"),
+  keywords         STRING             OPTIONS(description="Up to 5 English keywords, comma-separated"),
+  key_message      STRING             OPTIONS(description="Main competitor signal from the article"),
+  relevance        STRING             OPTIONS(description="Relevant atau Not Relevant"),
+  lm_model         STRING             OPTIONS(description="LM model used for enrichment"),
+  analysis_status  STRING    NOT NULL OPTIONS(description="analyzed, skipped, atau failed"),
+  analysis_error   STRING             OPTIONS(description="Short failure/skip reason"),
+  analyzed_at      TIMESTAMP NOT NULL OPTIONS(description="Waktu enrichment row dibuat")
+)
+PARTITION BY DATE(analyzed_at)
+CLUSTER BY article_id, company
+OPTIONS(
+  description="LM enrichment for competitor news. No sentiment is calculated.",
+  partition_expiration_days=NULL
+);
+
+-- =============================================================================
+-- VIEW: competitor_news_enrichment_latest (1 row per article_id)
+-- =============================================================================
+CREATE OR REPLACE VIEW `az_daily_news_collection.competitor_news_enrichment_latest` AS
+SELECT * EXCEPT(rn)
+FROM (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY article_id ORDER BY analyzed_at DESC) AS rn
+  FROM `az_daily_news_collection.competitor_news_enrichment`
+)
+WHERE rn = 1;
+
+-- =============================================================================
+-- VIEW: competitor_news_latest (raw + enrichment)
+-- =============================================================================
+CREATE OR REPLACE VIEW `az_daily_news_collection.competitor_news_latest` AS
+SELECT
+  raw.id,
+  raw.company,
+  raw.headline,
+  raw.url,
+  raw.canonical_url,
+  raw.source,
+  raw.published_at,
+  raw.snippet,
+  raw.matched_query,
+  raw.is_whitelisted_source,
+  raw.scraped_at,
+  enrichment.summary,
+  enrichment.keywords,
+  enrichment.key_message,
+  enrichment.relevance,
+  COALESCE(enrichment.analysis_status, 'pending') AS analysis_status,
+  enrichment.analysis_error,
+  enrichment.lm_model,
+  enrichment.analyzed_at
+FROM `az_daily_news_collection.competitor_news_articles_latest` raw
+LEFT JOIN `az_daily_news_collection.competitor_news_enrichment_latest` enrichment
+  ON raw.id = enrichment.article_id;
+
+-- =============================================================================
 -- TABLE: pipeline_state
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `az_daily_news_collection.pipeline_state` (

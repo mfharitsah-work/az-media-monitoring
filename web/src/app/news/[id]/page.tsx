@@ -35,7 +35,7 @@ export default async function NewsDetailPage({ params }: { params: Params }) {
   return (
     <article className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
       <Link
-        href="/news"
+        href="/"
         className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />

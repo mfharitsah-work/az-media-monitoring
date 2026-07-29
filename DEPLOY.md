@@ -15,8 +15,11 @@ GitHub Actions
   - fetch_news.py
   - bq_load.py
   - update_pipeline_state.py
-  - fetch_competitor_counts.py
-  - bq_load_competitors.py
+  - competitor-news.yml
+    - fetch_competitor_news.py
+    - bq_load_competitor_news.py
+    - enrich_competitor_news.py
+    - bq_load_competitor_enrichment.py
   - POST /api/revalidate
         |
         v
@@ -27,6 +30,7 @@ Vercel / Next.js app
   - /
   - /news
   - /news/[id]
+  - /competitors
   - /analytics
   - /astrazeneca
   - /sentiment
@@ -48,7 +52,9 @@ Before pushing, confirm secrets and runtime outputs are not staged:
 git status --short
 ```
 
-Do not commit `.env`, service account JSON files, `.venv`, `news.csv`, `news.json`, or `competitor_news.json`.
+Do not commit `.env`, service account JSON files, `.venv`, `news.csv`,
+`news.json`, `competitor_news.json`, `competitor_news_raw.json`, or
+`competitor_news_enrichment.json`.
 
 ## Vercel
 
@@ -91,6 +97,7 @@ Open GitHub repo -> Settings -> Secrets and variables -> Actions, then add:
 | Secret | Notes |
 |---|---|
 | `GROQ_API_KEY` | Used by `fetch_news.py --use-groq` |
+| `CEREBRAS_API_KEY` | Used by competitor news enrichment |
 | `GCP_PROJECT_ID` | Same project used by Vercel |
 | `GCP_SA_JSON` | Full service account JSON content |
 | `VERCEL_URL` | Production URL, for example `https://az-media-monitoring.vercel.app` |
@@ -123,6 +130,28 @@ Approximate WIB schedule:
 
 GitHub scheduled workflows are not exact timers. Runs can be delayed or occasionally skipped, especially near busy times. The project handles this by computing a dynamic scrape window from `pipeline_state` instead of relying on a fixed 24-hour window.
 
+Competitor news workflow file:
+
+```text
+.github/workflows/competitor-news.yml
+```
+
+Current cron:
+
+```yaml
+cron: "37 1,13 * * *"
+```
+
+Approximate WIB schedule:
+
+| UTC | WIB |
+|---|---|
+| 01:37 | 08:37 |
+| 13:37 | 20:37 |
+
+Competitor enrichment uses `CEREBRAS_API_KEY` and defaults to model
+`gpt-oss-120b`. The model name is workflow configuration, not a secret.
+
 ## Manual Workflow Test
 
 Open GitHub -> Actions -> Daily News Scrape & Load -> Run workflow.
@@ -145,11 +174,21 @@ Compute scrape window
 Run scraper
 Load to BigQuery
 Update scrape state
-Scrape competitor counts
-Load competitor counts to BigQuery
 Invalidate Vercel cache
 Upload artifact
 ```
+
+For competitor news, open GitHub -> Actions -> Competitor News Scrape & Enrich
+-> Run workflow.
+
+Useful test inputs:
+
+| Input | Suggested value |
+|---|---|
+| `hours` | `6` |
+| `max_per_company` | `5` |
+| `max_lm_articles` | `3` for quota-light test |
+| `max_lm_per_company` | `1` |
 
 ## BigQuery Setup
 
@@ -168,6 +207,11 @@ Main objects:
 | `articles_last_24h` | Legacy compatibility view |
 | `competitor_articles` | Competitor count table |
 | `competitor_articles_latest` | 1 latest row per company + URL |
+| `competitor_news_articles` | Raw competitor news articles |
+| `competitor_news_articles_latest` | 1 latest row per competitor article id |
+| `competitor_news_enrichment` | Cerebras enrichment rows for competitor news |
+| `competitor_news_enrichment_latest` | 1 latest enrichment row per article id |
+| `competitor_news_latest` | Joined raw + enrichment view for the web app |
 | `pipeline_state` | Last successful scrape timestamp |
 
 Loaders intentionally avoid BigQuery DML/MERGE so the project can run without billing enabled. They dedupe by building a replacement table and copying it over the target table.
@@ -177,7 +221,7 @@ Loaders intentionally avoid BigQuery DML/MERGE so the project can run without bi
 Python syntax:
 
 ```bash
-python -m py_compile fetch_news.py fetch_competitor_counts.py bq_load.py bq_load_competitors.py compute_scrape_window.py update_pipeline_state.py
+python -m py_compile fetch_news.py fetch_competitor_counts.py fetch_competitor_news.py enrich_competitor_news.py bq_load.py bq_load_competitors.py bq_load_competitor_news.py bq_load_competitor_enrichment.py compute_scrape_window.py update_pipeline_state.py
 ```
 
 Frontend:
@@ -222,4 +266,11 @@ This is normal GitHub Actions behavior. Use the dynamic scrape window and BigQue
 
 ### BigQuery DML/MERGE fails because billing is disabled
 
-This project does not require DML for normal loads. If a DML error appears, verify you are running the current `bq_load.py` and `bq_load_competitors.py`.
+This project does not require DML for normal loads. If a DML error appears,
+verify you are running the current BigQuery loaders:
+
+```text
+bq_load.py
+bq_load_competitor_news.py
+bq_load_competitor_enrichment.py
+```

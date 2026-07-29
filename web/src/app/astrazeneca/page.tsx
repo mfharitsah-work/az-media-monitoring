@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowLeft, Smile } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { ArticleCardGallery } from "@/components/article-card-gallery";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { articleRepo } from "@/lib/repositories";
-import { TEXT_TONE, netSentimentColor } from "@/lib/brand";
 import type { ArticleListFilters, ArticleSubcategory } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -19,9 +17,11 @@ export const revalidate = 3600;
 
 const PAGE_SIZE = 60;
 
-// Filter tabs — semua artikel pakai category="About AstraZeneca",
-// subcategory yg membedakan: AZ Focus vs AZ Mentioned.
-const AZ_TABS: { value: string; label: string; subcategories: ArticleSubcategory[] }[] = [
+const AZ_TABS: {
+  value: string;
+  label: string;
+  subcategories: ArticleSubcategory[];
+}[] = [
   { value: "all", label: "All AZ", subcategories: ["AZ Focus", "AZ Mentioned"] },
   { value: "focus", label: "AZ Focus", subcategories: ["AZ Focus"] },
   { value: "mentioned", label: "AZ Mentioned", subcategories: ["AZ Mentioned"] },
@@ -36,7 +36,6 @@ export default async function AstraZenecaPage({
   const activeValue = sp.filter ?? "all";
   const activeTab = AZ_TABS.find((t) => t.value === activeValue) ?? AZ_TABS[0];
 
-  // Filter object yang dipakai oleh DAL (all-time, subcategory sesuai tab).
   const filters: ArticleListFilters = {
     range: "all-time",
     categories: ["About AstraZeneca"],
@@ -65,17 +64,7 @@ export default async function AstraZenecaPage({
 
       <AzFilterTabs activeValue={activeValue} />
 
-      <Suspense
-        key={`kpi-${activeValue}`}
-        fallback={<NetSentimentSkeleton />}
-      >
-        <NetSentimentCard filters={filters} />
-      </Suspense>
-
-      <Suspense
-        key={`list-${activeValue}`}
-        fallback={<GallerySkeleton />}
-      >
+      <Suspense key={`list-${activeValue}`} fallback={<GallerySkeleton />}>
         <ResultGrid filters={filters} />
       </Suspense>
     </div>
@@ -105,50 +94,6 @@ function AzFilterTabs({ activeValue }: { activeValue: string }) {
   );
 }
 
-/**
- * Net Sentiment KPI standalone — dihitung untuk subset artikel AZ yang
- * cocok dengan tab aktif. Klik buka /sentiment untuk penjelasan rumus.
- */
-async function NetSentimentCard({ filters }: { filters: ArticleListFilters }) {
-  const kpi = await articleRepo.filteredKpi(filters);
-  const sign = kpi.netSentiment > 0 ? "+" : "";
-
-  return (
-    <Link href="/sentiment" className="group block max-w-sm focus-visible:outline-none">
-      <Card className="transition-shadow group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring">
-        <CardContent className="p-5">
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground group-hover:text-foreground">
-            <Smile className="h-4 w-4" />
-            Net Sentiment
-          </div>
-          <div
-            className="mt-3 text-4xl font-bold tracking-tight"
-            style={{ color: netSentimentColor(kpi.netSentiment) }}
-          >
-            {sign}
-            {kpi.netSentiment}
-          </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            <span style={{ color: TEXT_TONE.positive }} className="font-medium">
-              {kpi.positiveCount} positive
-            </span>
-            {" · "}
-            <span style={{ color: TEXT_TONE.negative }} className="font-medium">
-              {kpi.negativeCount} negative
-            </span>
-            {" · "}
-            <span>{kpi.neutralCount} neutral</span>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
-function NetSentimentSkeleton() {
-  return <Skeleton className="h-32 w-full max-w-sm" />;
-}
-
 async function ResultGrid({ filters }: { filters: ArticleListFilters }) {
   const { items, total } = await articleRepo.findMany(filters);
 
@@ -168,8 +113,8 @@ async function ResultGrid({ filters }: { filters: ArticleListFilters }) {
         Showing {items.length} of {total} article{total === 1 ? "" : "s"}
       </p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((a) => (
-          <ArticleCardGallery key={a.id} article={a} />
+        {items.map((article) => (
+          <ArticleCardGallery key={article.id} article={article} />
         ))}
       </div>
     </>

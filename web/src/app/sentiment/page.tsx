@@ -125,22 +125,18 @@ export default function SentimentMethodologyPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm leading-relaxed">
           <p>
-            The <span className="font-semibold">Net Sentiment</span> number shown on
-            the homepage is computed as:
+            Net Sentiment applies only to articles in{" "}
+            <span className="font-semibold">About AstraZeneca</span>. The underlying
+            calculation is:
           </p>
           <pre className="rounded-md bg-muted p-4 font-mono text-xs">
             net_sentiment = positive_count − negative_count
           </pre>
           <p>
-            Positive values (green) mean more positive than negative coverage in the
-            period; negative values (red) mean the opposite. Neutral articles are
-            excluded from the formula so a high volume of neutral news doesn&rsquo;t
-            mask the underlying tone.
-          </p>
-          <p className="text-muted-foreground">
-            The <span className="font-mono">+N today</span> indicator on the landing
-            page shows today&rsquo;s contribution alone &mdash; useful for spotting
-            sudden shifts before they reshape the cumulative number.
+            The dashboard now emphasizes the three visible labels instead of a standalone
+            plus/minus score: positive, negative, and neutral. Regulatory, policy, and
+            crisis articles can still have labels, but they do not contribute to an AZ
+            net sentiment headline.
           </p>
         </CardContent>
       </Card>

@@ -50,7 +50,7 @@
 }
 
 :root {
-  --app-font-sans: "Segoe UI", Arial, Helvetica, sans-serif;
+  --app-font-sans: "Times New Roman", Times, Georgia, serif;
   --app-font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
 
   /* Brand palette — selaras dengan web/src/lib/brand.ts */

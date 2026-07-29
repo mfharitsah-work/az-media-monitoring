@@ -1,12 +1,21 @@
 import { unstable_cache } from "next/cache";
 import { bq, tbl } from "@/lib/bigquery";
 import {
+  articleDateInListRange,
+  dateInAnalyticsRange as isoDateInAnalyticsRange,
+  jakartaDate,
+} from "@/lib/date-ranges";
+import {
   ArticleSchema,
-  parseSemester,
+  CompetitorCompanySchema,
+  CompetitorNewsArticleSchema,
   type AllTimeKpi,
   type AnalyticsRange,
   type Article,
   type ArticleListFilters,
+  type CompetitorCompany,
+  type CompetitorNewsArticle,
+  type CompetitorNewsFilters,
   type DailyKpi,
   type DateBounds,
   type DateRange,
@@ -35,26 +44,35 @@ import type { ArticleRepository } from "./article-repository";
 
 const CACHE_TTL_SEC = 24 * 60 * 60;
 const CACHE_TAG = "articles";
-const JKT = "Asia/Jakarta";
 
 // =============================================================================
 // Snapshot loader — satu-satunya BQ query untuk data artikel
 // =============================================================================
 
-type BQValue = string | { value: string } | null | undefined;
+type BQValue = string | boolean | { value: string } | null | undefined;
+
+function normString(v: BQValue): string | null {
+  if (v == null) return null;
+  if (typeof v === "object" && "value" in v) return v.value;
+  return String(v);
+}
+
+function normBoolean(v: BQValue): boolean | null {
+  if (v == null) return null;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "object" && "value" in v) {
+    return v.value === "true";
+  }
+  return v === "true";
+}
 
 function normalizeRow(row: Record<string, BQValue>): Article {
-  const norm = (v: BQValue): string | null => {
-    if (v == null) return null;
-    if (typeof v === "object" && "value" in v) return v.value;
-    return v;
-  };
   return ArticleSchema.parse({
     id: row.id,
     headline: row.headline,
     headline_id: row.headline_id ?? null,
     url: row.url,
-    date: norm(row.date),
+    date: normString(row.date),
     source: row.source ?? null,
     summary: row.summary ?? null,
     summary_id: row.summary_id ?? null,
@@ -66,7 +84,7 @@ function normalizeRow(row: Record<string, BQValue>): Article {
     city: row.city ?? null,
     province: row.province ?? null,
     language: row.language ?? null,
-    scraped_at: norm(row.scraped_at),
+    scraped_at: normString(row.scraped_at),
   });
 }
 
@@ -123,20 +141,25 @@ const loadCompetitorSnapshot = unstable_cache(
   async (): Promise<CompetitorSnapshot> => {
     const sql = `
       SELECT url, company, source, published_at
+      FROM ${tbl("competitor_news_articles_latest")}
+      ORDER BY published_at DESC
+    `;
+    const legacySql = `
+      SELECT url, company, source, published_at
       FROM ${tbl("competitor_articles_latest")}
       ORDER BY published_at DESC
     `;
-    const [rows] = await bq().query({ query: sql });
-    const norm = (v: BQValue): string | null => {
-      if (v == null) return null;
-      if (typeof v === "object" && "value" in v) return v.value;
-      return v;
-    };
+    let rows;
+    try {
+      [rows] = await bq().query({ query: sql });
+    } catch {
+      [rows] = await bq().query({ query: legacySql });
+    }
     const normalized: CompetitorRow[] = rows.map((r: Record<string, BQValue>) => ({
-      url: String(r.url),
-      company: String(r.company),
-      source: r.source != null ? String(r.source) : null,
-      published_at: norm(r.published_at) ?? "",
+      url: normString(r.url) ?? "",
+      company: normString(r.company) ?? "",
+      source: normString(r.source),
+      published_at: normString(r.published_at) ?? "",
     }));
     return { rows: normalized };
   },
@@ -144,26 +167,72 @@ const loadCompetitorSnapshot = unstable_cache(
   { revalidate: CACHE_TTL_SEC, tags: [CACHE_TAG] },
 );
 
-// =============================================================================
-// Date helpers (Asia/Jakarta, no DST)
-// =============================================================================
-
-/** YYYY-MM-DD dari ISO timestamp, di timezone Jakarta. */
-function jakartaDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-CA", { timeZone: JKT });
+interface CompetitorNewsSnapshot {
+  articles: CompetitorNewsArticle[];
 }
 
-/** Tanggal Jakarta hari ini (YYYY-MM-DD). */
-function todayJakarta(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: JKT });
+function normalizeCompetitorNewsRow(row: Record<string, BQValue>): CompetitorNewsArticle {
+  const url = normString(row.url) ?? "";
+  return CompetitorNewsArticleSchema.parse({
+    id: normString(row.id) ?? "",
+    company: normString(row.company),
+    headline: normString(row.headline) ?? "",
+    url,
+    canonical_url: normString(row.canonical_url) ?? url,
+    source: normString(row.source),
+    published_at: normString(row.published_at),
+    snippet: normString(row.snippet),
+    matched_query: normString(row.matched_query),
+    is_whitelisted_source: normBoolean(row.is_whitelisted_source),
+    scraped_at: normString(row.scraped_at),
+    summary: normString(row.summary),
+    keywords: normString(row.keywords),
+    key_message: normString(row.key_message),
+    relevance: normString(row.relevance),
+    analysis_status: normString(row.analysis_status) ?? "pending",
+    analysis_error: normString(row.analysis_error),
+    lm_model: normString(row.lm_model),
+    analyzed_at: normString(row.analyzed_at),
+  });
 }
 
-/** Tanggal Jakarta N hari lalu (YYYY-MM-DD). */
-function jakartaDateMinusDays(n: number): string {
-  const d = new Date(`${todayJakarta()}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
+const loadCompetitorNewsSnapshot = unstable_cache(
+  async (): Promise<CompetitorNewsSnapshot> => {
+    const sql = `
+      SELECT
+        id,
+        company,
+        headline,
+        url,
+        canonical_url,
+        source,
+        published_at,
+        snippet,
+        matched_query,
+        is_whitelisted_source,
+        scraped_at,
+        summary,
+        keywords,
+        key_message,
+        relevance,
+        analysis_status,
+        analysis_error,
+        lm_model,
+        analyzed_at
+      FROM ${tbl("competitor_news_latest")}
+      ORDER BY published_at DESC
+    `;
+    try {
+      const [rows] = await bq().query({ query: sql });
+      const articles = rows.map(normalizeCompetitorNewsRow);
+      return { articles };
+    } catch {
+      return { articles: [] };
+    }
+  },
+  ["competitor-news-snapshot"],
+  { revalidate: CACHE_TTL_SEC, tags: [CACHE_TAG] },
+);
 
 // =============================================================================
 // In-memory filters & aggregations (pure functions atas snapshot)
@@ -181,37 +250,7 @@ function inListRange(
   customDateTo?: string,
   nowMs = Date.now(),
 ): boolean {
-  // Semester variants — share semantik dengan dateInAnalyticsRange.
-  if (range.startsWith("h1-") || range.startsWith("h2-")) {
-    return dateInAnalyticsRange(a.date, range as AnalyticsRange);
-  }
-  if (range === "all-time") return true;
-  if (range === "latest") {
-    const articleDate = jakartaDate(a.date);
-    return (
-      articleDate >= jakartaDateMinusDays(1) &&
-      articleDate <= todayJakarta() &&
-      new Date(a.date).getTime() <= nowMs
-    );
-  }
-  if (range === "yesterday") {
-    return jakartaDate(a.date) === jakartaDateMinusDays(1);
-  }
-  if (range === "today") {
-    return (
-      jakartaDate(a.date) === todayJakarta() &&
-      new Date(a.date).getTime() <= nowMs
-    );
-  }
-  if (range === "last-7-days") {
-    return jakartaDate(a.date) >= jakartaDateMinusDays(6);
-  }
-  if (range === "custom") {
-    const articleDate = jakartaDate(a.date);
-    if (customDateFrom && articleDate < customDateFrom) return false;
-    if (customDateTo && articleDate > customDateTo) return false;
-  }
-  return true;
+  return articleDateInListRange(a.date, range, customDateFrom, customDateTo, nowMs);
 }
 
 /**
@@ -220,17 +259,7 @@ function inListRange(
  * Dipakai untuk article date DAN competitor published_at (semua di Jakarta timezone).
  */
 function dateInAnalyticsRange(iso: string, range: AnalyticsRange): boolean {
-  if (range === "all-time") return true;
-  if (range === "last-7-days") {
-    return jakartaDate(iso) >= jakartaDateMinusDays(6);
-  }
-  // Semester: h1-YYYY → YYYY-01-01..YYYY-06-30, h2-YYYY → YYYY-07-01..YYYY-12-31
-  const sem = parseSemester(range);
-  if (!sem) return false;
-  const d = jakartaDate(iso);
-  const startMonth = sem.half === 1 ? "01-01" : "07-01";
-  const endMonth = sem.half === 1 ? "06-30" : "12-31";
-  return d >= `${sem.year}-${startMonth}` && d <= `${sem.year}-${endMonth}`;
+  return isoDateInAnalyticsRange(iso, range);
 }
 
 /** Wrapper untuk Article (legacy callers). */
@@ -271,11 +300,54 @@ function matchesFilters(
   return true;
 }
 
+function matchesCompetitorFilters(
+  article: CompetitorNewsArticle,
+  filters: CompetitorNewsFilters,
+  nowMs: number,
+): boolean {
+  if (
+    !articleDateInListRange(
+      article.published_at,
+      filters.range,
+      filters.customDateFrom,
+      filters.customDateTo,
+      nowMs,
+    )
+  ) {
+    return false;
+  }
+
+  if (filters.companies?.length && !filters.companies.includes(article.company)) {
+    return false;
+  }
+
+  if (filters.q) {
+    const q = filters.q.toLowerCase();
+    const haystack = [
+      article.company,
+      article.headline,
+      article.source ?? "",
+      article.snippet ?? "",
+      article.summary ?? "",
+      article.key_message ?? "",
+      article.keywords ?? "",
+    ]
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(q)) return false;
+  }
+
+  return true;
+}
+
 /** Hitung KPI dari sekumpulan artikel. */
 function computeKpi(articles: Article[]): AllTimeKpi {
   let positiveCount = 0;
   let negativeCount = 0;
   let neutralCount = 0;
+  let azPositiveCount = 0;
+  let azNegativeCount = 0;
+  let azNeutralCount = 0;
   let azFocusCount = 0;
   let azMentionedCount = 0;
   let azRelatedTotal = 0;
@@ -285,20 +357,28 @@ function computeKpi(articles: Article[]): AllTimeKpi {
     else if (a.sentiment === "Negative") negativeCount++;
     else if (a.sentiment === "Neutral") neutralCount++;
 
-    if (a.category === "About AstraZeneca") azRelatedTotal++;
+    if (a.category === "About AstraZeneca") {
+      azRelatedTotal++;
+      if (a.sentiment === "Positive") azPositiveCount++;
+      else if (a.sentiment === "Negative") azNegativeCount++;
+      else if (a.sentiment === "Neutral") azNeutralCount++;
+    }
     if (a.subcategory === "AZ Focus") azFocusCount++;
     else if (a.subcategory === "AZ Mentioned") azMentionedCount++;
   }
 
   return {
     total: articles.length,
-    netSentiment: positiveCount - negativeCount,
+    netSentiment: azPositiveCount - azNegativeCount,
     positiveCount,
     negativeCount,
     neutralCount,
     azRelatedTotal,
     azFocusCount,
     azMentionedCount,
+    azPositiveCount,
+    azNegativeCount,
+    azNeutralCount,
   };
 }
 
@@ -335,6 +415,22 @@ export const bigQueryArticleRepository: ArticleRepository = {
       items: matched.slice(offset, offset + limit),
       total: matched.length,
     };
+  },
+
+  async findCompetitorNews(filters) {
+    const { articles } = await loadCompetitorNewsSnapshot();
+    const nowMs = Date.now();
+    const matched = articles.filter((a) => matchesCompetitorFilters(a, filters, nowMs));
+    const offset = filters.offset ?? 0;
+    const limit = filters.limit ?? 20;
+    return {
+      items: matched.slice(offset, offset + limit),
+      total: matched.length,
+    };
+  },
+
+  async competitorCompanies(): Promise<CompetitorCompany[]> {
+    return [...CompetitorCompanySchema.options];
   },
 
   async dailyKpi(): Promise<DailyKpi> {

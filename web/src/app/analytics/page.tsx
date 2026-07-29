@@ -19,6 +19,7 @@ import {
   ShareOfVoiceTable,
   ShareOfVoiceTableSkeleton,
 } from "@/components/share-of-voice-table";
+import { describeAnalyticsRange } from "@/lib/date-ranges";
 import { articleRepo } from "@/lib/repositories";
 import { isAnalyticsRange, type AnalyticsRange } from "@/lib/types";
 
@@ -34,11 +35,9 @@ const TOP_LIMIT = 10;
 const TOP_AZ_TOPIC_LIMIT = 5;
 
 function rangeLabel(range: AnalyticsRange): string {
-  if (range === "all-time") return "all time";
+  if (range === "this-month") return "this month";
   if (range === "last-7-days") return "last 7 days";
-  // Semester
-  const [half, year] = range.split("-");
-  return `${half.toUpperCase()} ${year}`;
+  return "selected range";
 }
 
 export default async function AnalyticsPage({
@@ -53,9 +52,7 @@ export default async function AnalyticsPage({
     ? rawRange
     : "last-7-days";
   const label = rangeLabel(range);
-
-  // Bounds tahun untuk generate opsi semester. Cheap — di-derive dari snapshot.
-  const bounds = await articleRepo.dateBounds();
+  const rangeDescription = describeAnalyticsRange(range);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
@@ -67,7 +64,10 @@ export default async function AnalyticsPage({
             monitoring.
           </p>
         </div>
-        <AnalyticsRangeSelector activeRange={range} bounds={bounds} />
+        <AnalyticsRangeSelector
+          activeRange={range}
+          rangeDescription={rangeDescription}
+        />
       </header>
 
       {/* KPI summary — streaming independen dari chart. */}
@@ -178,49 +178,27 @@ async function TopAzTopicsSection({ range }: { range: AnalyticsRange }) {
 // UI primitives
 // =============================================================================
 
-/**
- * Range selector — 2 primary tabs (Last 7 days / All time) + semester chips
- * yang di-generate dynamic dari dateBounds.
- *
- * Pure server component — semua navigasi lewat Link (SSR-friendly, no JS).
- */
 function AnalyticsRangeSelector({
   activeRange,
-  bounds,
+  rangeDescription,
 }: {
   activeRange: AnalyticsRange;
-  bounds: { minYear: number; maxYear: number };
+  rangeDescription: string;
 }) {
-  // Generate semua semester (h1, h2) antara minYear dan maxYear.
-  // Sorted desc (terbaru di depan) supaya user lihat data terbaru duluan.
-  const semesters: AnalyticsRange[] = [];
-  for (let y = bounds.maxYear; y >= bounds.minYear; y--) {
-    semesters.push(`h2-${y}`);
-    semesters.push(`h1-${y}`);
-  }
-
   return (
     <div className="space-y-2">
       <div className="inline-flex rounded-md border bg-muted p-1">
         <RangeTab href="?range=last-7-days" active={activeRange === "last-7-days"}>
           Last 7 days
         </RangeTab>
-        <RangeTab href="?range=all-time" active={activeRange === "all-time"}>
-          All Time
+        <RangeTab href="?range=this-month" active={activeRange === "this-month"}>
+          This Month
         </RangeTab>
       </div>
-      {semesters.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">
-            By semester:
-          </span>
-          {semesters.map((sem) => (
-            <RangeChip key={sem} href={`?range=${sem}`} active={activeRange === sem}>
-              {rangeLabel(sem)}
-            </RangeChip>
-          ))}
-        </div>
-      )}
+      <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">Displayed range:</span>{" "}
+        {rangeDescription}
+      </p>
     </div>
   );
 }
@@ -241,29 +219,6 @@ function RangeTab({
         active
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {children}
-    </Link>
-  );
-}
-
-function RangeChip({
-  href,
-  active,
-  children,
-}: {
-  href: string;
-  active: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-        active
-          ? "border-foreground bg-foreground text-background"
-          : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
       }`}
     >
       {children}

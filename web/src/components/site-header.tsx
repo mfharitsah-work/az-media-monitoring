@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Home" },
-  { href: "/news", label: "All News" },
+  { href: "/", label: "All News" },
+  { href: "/competitors", label: "Competitor News" },
   { href: "/analytics", label: "Analytics" },
 ] as const;
 
@@ -25,7 +25,7 @@ export function SiteHeader() {
             priority
             className="h-6 w-auto shrink-0 object-contain sm:h-6"
           />
-          <span className="truncate text-[11px] leading-none text-white/90 sm:text-xl ml-2 ">
+          <span className="pb-0.5 truncate text-[11px] leading-none text-white/90 sm:text-xl ml-2 ">
             Media Monitoring
           </span>
         </Link>
@@ -56,10 +56,12 @@ export function SiteHeader() {
 
 /**
  * Match current path ke nav item:
- * - "/" hanya exact match (kalau pakai startsWith, semua page jadi active untuk Home)
+ * - "/" mewakili All News utama dan detail /news/[id]
  * - Path lain: exact ATAU sub-path (mis. /news/[id] juga highlights "All News")
  */
 function isActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/";
+  if (href === "/") {
+    return pathname === "/" || pathname === "/news" || pathname.startsWith("/news/");
+  }
   return pathname === href || pathname.startsWith(href + "/");
 }

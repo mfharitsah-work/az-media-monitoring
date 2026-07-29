@@ -1,0 +1,118 @@
+name: Competitor News Scrape & Enrich
+
+# Schedule: dua kali sehari, 08:37 dan 20:37 WIB = 01:37 dan 13:37 UTC.
+# Raw scrape selalu jalan dulu. Cerebras enrichment hanya memproses artikel yang
+# belum punya enrichment row dan dibatasi cap per run/per company.
+on:
+  schedule:
+    - cron: "37 1,13 * * *"
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Window jam ke belakang"
+        default: "24"
+        required: false
+      max_per_company:
+        description: "Cap raw article per competitor"
+        default: "20"
+        required: false
+      max_lm_articles:
+        description: "Cap Cerebras-enriched articles per run"
+        default: "10"
+        required: false
+      max_lm_per_company:
+        description: "Cap Cerebras-enriched articles per company"
+        default: "2"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: competitor-news-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape-enrich-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+      COMPETITOR_LM_MODEL: gpt-oss-120b
+      COMPETITOR_LM_MAX_ARTICLES_PER_RUN: "10"
+      COMPETITOR_LM_MAX_PER_COMPANY: "2"
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      VERCEL_URL: ${{ secrets.VERCEL_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_JSON }}
+
+      - name: Compute scrape window
+        id: window
+        run: |
+          HOURS="$(python compute_scrape_window.py \
+            --state-name competitor_news_scrape \
+            --default-hours 24 \
+            --min-hours 6 \
+            --max-hours 48 \
+            --buffer-hours 3)"
+          echo "hours=${HOURS}" >> "$GITHUB_OUTPUT"
+          echo "Using competitor scrape window: ${HOURS} hours"
+
+      - name: Scrape competitor raw news
+        run: |
+          python fetch_competitor_news.py \
+            --hours "${{ github.event.inputs.hours || steps.window.outputs.hours }}" \
+            --max-per-company "${{ github.event.inputs.max_per_company || '20' }}" \
+            --output competitor_news_raw.json
+
+      - name: Load competitor raw news to BigQuery
+        run: python bq_load_competitor_news.py competitor_news_raw.json
+
+      - name: Update competitor scrape state
+        run: python update_pipeline_state.py --state-name competitor_news_scrape
+
+      - name: Enrich pending competitor news with Cerebras
+        run: |
+          python enrich_competitor_news.py \
+            --limit "${{ github.event.inputs.max_lm_articles || env.COMPETITOR_LM_MAX_ARTICLES_PER_RUN }}" \
+            --max-per-company "${{ github.event.inputs.max_lm_per_company || env.COMPETITOR_LM_MAX_PER_COMPANY }}" \
+            --output competitor_news_enrichment.json
+
+      - name: Load competitor enrichment to BigQuery
+        run: python bq_load_competitor_enrichment.py competitor_news_enrichment.json
+
+      - name: Invalidate Vercel cache
+        if: success() && env.VERCEL_URL != '' && env.REVALIDATE_SECRET != ''
+        run: |
+          curl -X POST "${VERCEL_URL%/}/api/revalidate" \
+            -H "Authorization: Bearer ${REVALIDATE_SECRET}" \
+            -f -s -S
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: competitor-news-output-${{ github.run_id }}
+          path: |
+            competitor_news_raw.json
+            competitor_news_enrichment.json
+          retention-days: 7
+          if-no-files-found: ignore

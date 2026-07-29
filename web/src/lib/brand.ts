@@ -31,7 +31,7 @@ const NEUTRAL_GRAY = "#64748b";
 const LIME_INK = "#6c7600";
 
 /**
- * Warna untuk indikator berbentuk TEKS (angka Net Sentiment, delta, breakdown).
+ * Warna untuk indikator berbentuk TEKS (delta, breakdown).
  * Beda dari swatch (solid fill) — di sini warna harus kontras di bg terang.
  */
 export const TEXT_TONE = {
@@ -91,13 +91,6 @@ export const CATEGORY_STRIPE: Record<ArticleCategory, string> = {
   "Regulatory/Policy": BRAND.navy,
   "Crisis & Disruption": CRISIS_RED,
 };
-
-/** Tone teks untuk angka Net Sentiment (positif/negatif/0). */
-export function netSentimentColor(net: number): string {
-  if (net > 0) return TEXT_TONE.positive;
-  if (net < 0) return TEXT_TONE.negative;
-  return TEXT_TONE.neutral;
-}
 
 // =============================================================================
 // Chart palette (Recharts) — solid hex
