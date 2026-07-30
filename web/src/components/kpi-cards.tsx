@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Newspaper, Smile, Target } from "lucide-react";
+import { Building2, Newspaper, Smile, Target } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { BRAND, TEXT_TONE } from "@/lib/brand";
@@ -13,6 +13,7 @@ import type {
 const KPI_LINKS = {
   totalNews: "/",
   aboutAz: "/astrazeneca",
+  competitorNews: "/competitors",
 } as const;
 
 export async function FilteredKpiCards({
@@ -20,10 +21,13 @@ export async function FilteredKpiCards({
 }: {
   filters: ArticleListFilters;
 }) {
-  const kpi = await articleRepo.filteredKpi(filters);
+  const [kpi, competitorNews] = await Promise.all([
+    articleRepo.filteredKpi(filters),
+    articleRepo.findCompetitorNews({ range: "all-time", limit: 1 }),
+  ]);
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2">
+    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <KpiCard
         href={KPI_LINKS.totalNews}
         icon={<Newspaper className="h-4 w-4" />}
@@ -43,6 +47,18 @@ export async function FilteredKpiCards({
             <AzBreakdown kpi={kpi} />
             <AzSentimentBreakdown kpi={kpi} />
           </div>
+        }
+      />
+      <KpiCard
+        href={KPI_LINKS.competitorNews}
+        icon={<Building2 className="h-4 w-4" />}
+        label="Competitor News"
+        value={competitorNews.total.toLocaleString("en-US")}
+        valueColor={BRAND.darkMulberry}
+        footer={
+          <span className="block text-xs text-muted-foreground">
+            All stored competitor articles
+          </span>
         }
       />
     </section>
@@ -102,8 +118,8 @@ export function AnalyticsKpiCardsSkeleton() {
 
 export function KpiCardsSkeleton() {
   return (
-    <section className="grid gap-4 sm:grid-cols-2">
-      {Array.from({ length: 2 }).map((_, i) => (
+    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, i) => (
         <Card key={i}>
           <CardContent className="p-5">
             <div className="h-4 w-32 animate-pulse rounded bg-muted" />

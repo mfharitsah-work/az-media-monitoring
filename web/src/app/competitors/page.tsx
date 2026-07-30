@@ -2,17 +2,14 @@ import type { Metadata } from "next";
 import { ExternalLink, Newspaper } from "lucide-react";
 
 import { CompetitorNewsFilters } from "@/components/competitor-news-filters";
-import { RangeTabs } from "@/components/news-filters";
 import { Pagination } from "@/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { describeArticleListRange } from "@/lib/date-ranges";
 import { articleRepo } from "@/lib/repositories";
 import {
   CompetitorCompanySchema,
   type CompetitorNewsArticle,
   type CompetitorNewsFilters as CompetitorNewsFilterState,
-  type DateRange,
 } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -22,15 +19,7 @@ export const metadata: Metadata = {
 
 export const revalidate = 3600;
 
-const PAGE_SIZE_BY_RANGE: Record<DateRange, number> = {
-  latest: 10,
-  yesterday: 10,
-  today: 10,
-  "last-7-days": 20,
-  "this-month": 20,
-  "all-time": 20,
-  custom: 20,
-};
+const PAGE_SIZE = 20;
 
 export default async function CompetitorNewsPage({
   searchParams,
@@ -41,11 +30,7 @@ export default async function CompetitorNewsPage({
   const { filters, page, pageSize } = parseParams(sp);
   const companies = await articleRepo.competitorCompanies();
   const { items, total } = await articleRepo.findCompetitorNews(filters);
-  const rangeDescription = describeArticleListRange(
-    filters.range,
-    filters.customDateFrom,
-    filters.customDateTo,
-  );
+  const rangeDescription = describeCompetitorRange();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -65,13 +50,10 @@ export default async function CompetitorNewsPage({
       </header>
 
       <section className="space-y-4">
-        <div className="space-y-2">
-          <RangeTabs activeRange={filters.range} />
-          <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Displayed range:</span>{" "}
-            {rangeDescription}
-          </p>
-        </div>
+        <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Displayed range:</span>{" "}
+          {rangeDescription}
+        </p>
         <CompetitorNewsFilters companies={companies} />
       </section>
 
@@ -104,36 +86,35 @@ function parseParams(sp: Record<string, string | undefined>): {
   page: number;
   pageSize: number;
 } {
-  let range: DateRange = "latest";
-  if (sp.range === "last-7-days") {
-    range = "last-7-days";
-  } else if (sp.range === "this-month" || sp.range === "all-time") {
-    range = "this-month";
-  } else if (sp.range === "today") {
-    range = "today";
-  } else if (sp.range === "yesterday") {
-    range = "yesterday";
-  } else if (sp.range === "latest" || sp.range === "last-24h") {
-    range = "latest";
-  }
-
   const company = sp.company
     ? CompetitorCompanySchema.safeParse(sp.company).data
     : undefined;
   const page = sp.page ? Math.max(1, parseInt(sp.page, 10) || 1) : 1;
-  const pageSize = PAGE_SIZE_BY_RANGE[range] ?? 20;
 
   return {
     filters: {
-      range,
+      range: "all-time",
       q: sp.q || undefined,
       companies: company ? [company] : undefined,
-      limit: pageSize,
-      offset: (page - 1) * pageSize,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
     },
     page,
-    pageSize,
+    pageSize: PAGE_SIZE,
   };
+}
+
+function describeCompetitorRange(): string {
+  return `All stored competitor news through ${formatTodayJakarta()} WIB`;
+}
+
+function formatTodayJakarta(): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date());
 }
 
 function CompetitorNewsCard({ article }: { article: CompetitorNewsArticle }) {
