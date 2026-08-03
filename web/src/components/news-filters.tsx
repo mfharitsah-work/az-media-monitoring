@@ -233,7 +233,7 @@ export function NewsFilters() {
   );
 }
 
-function DateRangePicker() {
+export function DateRangePicker() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();

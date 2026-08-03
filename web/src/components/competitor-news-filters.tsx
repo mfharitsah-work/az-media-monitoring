@@ -4,6 +4,7 @@ import { useOptimistic, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 
+import { DateRangePicker } from "@/components/news-filters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import type { CompetitorCompany } from "@/lib/types";
 
-const FILTER_KEYS = ["q", "company"] as const;
+const FILTER_KEYS = ["q", "company", "date", "from", "to"] as const;
 
 export function CompetitorNewsFilters({
   companies,
@@ -64,7 +65,7 @@ export function CompetitorNewsFilters({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 md:grid-cols-[1fr_260px]">
+      <div className="grid gap-3 md:grid-cols-[1fr_260px_230px]">
         <FilterField label="Search" htmlFor="competitor-search">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -96,6 +97,10 @@ export function CompetitorNewsFilters({
               ))}
             </SelectContent>
           </Select>
+        </FilterField>
+
+        <FilterField label="Date range" htmlFor="news-date-range">
+          <DateRangePicker />
         </FilterField>
       </div>
 

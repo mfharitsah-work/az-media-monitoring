@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
-import { ExternalLink, Newspaper } from "lucide-react";
+import { formatDistanceToNow, parseISO } from "date-fns";
+import { Newspaper } from "lucide-react";
 
 import { CompetitorNewsFilters } from "@/components/competitor-news-filters";
 import { Pagination } from "@/components/pagination";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { describeArticleListRange } from "@/lib/date-ranges";
 import { articleRepo } from "@/lib/repositories";
 import {
   CompetitorCompanySchema,
   type CompetitorNewsArticle,
   type CompetitorNewsFilters as CompetitorNewsFilterState,
+  type DateRange,
 } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -19,7 +22,7 @@ export const metadata: Metadata = {
 
 export const revalidate = 3600;
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 60;
 
 export default async function CompetitorNewsPage({
   searchParams,
@@ -30,7 +33,14 @@ export default async function CompetitorNewsPage({
   const { filters, page, pageSize } = parseParams(sp);
   const companies = await articleRepo.competitorCompanies();
   const { items, total } = await articleRepo.findCompetitorNews(filters);
-  const rangeDescription = describeCompetitorRange();
+  const rangeDescription =
+    filters.range === "all-time"
+      ? describeCompetitorRange()
+      : describeArticleListRange(
+          filters.range,
+          filters.customDateFrom,
+          filters.customDateTo,
+        );
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -64,10 +74,15 @@ export default async function CompetitorNewsPage({
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {items.map((article) => (
-            <CompetitorNewsCard key={article.id} article={article} />
-          ))}
+        <div className="space-y-6">
+          <p className="text-sm text-muted-foreground">
+            Showing {items.length} of {total} article{total === 1 ? "" : "s"}
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {items.map((article) => (
+              <CompetitorNewsCard key={article.id} article={article} />
+            ))}
+          </div>
           <Pagination
             currentPage={page}
             totalPages={totalPages}
@@ -90,10 +105,13 @@ function parseParams(sp: Record<string, string | undefined>): {
     ? CompetitorCompanySchema.safeParse(sp.company).data
     : undefined;
   const page = sp.page ? Math.max(1, parseInt(sp.page, 10) || 1) : 1;
+  const dateFilter = parseDateFilter(sp);
 
   return {
     filters: {
-      range: "all-time",
+      range: dateFilter.range,
+      customDateFrom: dateFilter.customDateFrom,
+      customDateTo: dateFilter.customDateTo,
       q: sp.q || undefined,
       companies: company ? [company] : undefined,
       limit: PAGE_SIZE,
@@ -102,6 +120,41 @@ function parseParams(sp: Record<string, string | undefined>): {
     page,
     pageSize: PAGE_SIZE,
   };
+}
+
+function parseDateFilter(sp: Record<string, string | undefined>): {
+  range: DateRange;
+  customDateFrom?: string;
+  customDateTo?: string;
+} {
+  const legacyDate = validIsoDate(sp.date);
+  const requestedFrom = validIsoDate(sp.from);
+  const requestedTo = validIsoDate(sp.to);
+  const firstBound = requestedFrom ?? requestedTo ?? legacyDate;
+  const secondBound = requestedTo ?? requestedFrom ?? legacyDate;
+
+  if (!firstBound || !secondBound) return { range: "all-time" };
+
+  return {
+    range: "custom",
+    customDateFrom: firstBound <= secondBound ? firstBound : secondBound,
+    customDateTo: firstBound <= secondBound ? secondBound : firstBound,
+  };
+}
+
+function validIsoDate(value: string | undefined): string | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return value;
 }
 
 function describeCompetitorRange(): string {
@@ -118,35 +171,38 @@ function formatTodayJakarta(): string {
 }
 
 function CompetitorNewsCard({ article }: { article: CompetitorNewsArticle }) {
+  const relativeDate = formatDistanceToNow(parseISO(article.published_at), {
+    addSuffix: true,
+  });
   const keywords = article.keywords
     ?.split(",")
     .map((keyword) => keyword.trim())
     .filter(Boolean)
-    .slice(0, 5);
+    .slice(0, 3);
   const bodyText = article.summary || article.snippet;
 
   return (
-    <Card className="py-0">
-      <CardContent className="space-y-3 p-4 sm:p-5">
+    <a
+      href={article.url}
+      target="_blank"
+      rel="noreferrer"
+      className="group block focus-visible:outline-none"
+    >
+      <Card className="h-full overflow-hidden transition-shadow group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring py-0 gap-0">
+        <div
+          className="h-1 w-full bg-[#97005D]"
+          aria-hidden
+        />
+        <div className="flex h-full flex-col gap-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{article.company}</Badge>
           <StatusBadge article={article} />
-          {article.source && <Badge variant="outline">{article.source}</Badge>}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {formatDateTime(article.published_at)}
-          </span>
         </div>
 
         <div className="space-y-2">
-          <a
-            href={article.url}
-            target="_blank"
-            rel="noreferrer"
-            className="group inline-flex items-start gap-2 text-lg font-semibold leading-snug hover:text-primary"
-          >
-            <span>{article.headline}</span>
-            <ExternalLink className="mt-1 h-4 w-4 shrink-0 opacity-70 transition-opacity group-hover:opacity-100" />
-          </a>
+          <h3 className="line-clamp-3 text-sm font-semibold leading-snug group-hover:text-primary sm:text-base">
+            {article.headline}
+          </h3>
           {bodyText && (
             <p className="line-clamp-3 text-sm text-muted-foreground">
               {bodyText}
@@ -168,8 +224,16 @@ function CompetitorNewsCard({ article }: { article: CompetitorNewsArticle }) {
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+
+        <div className="mt-auto flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="truncate font-medium text-foreground/80">
+            {article.source ?? "Unknown source"}
+          </span>
+          <span className="shrink-0">{relativeDate}</span>
+        </div>
+        </div>
+      </Card>
+    </a>
   );
 }
 
@@ -188,16 +252,4 @@ function StatusBadge({ article }: { article: CompetitorNewsArticle }) {
     return <Badge variant="outline">Skipped</Badge>;
   }
   return <Badge variant="destructive">Enrichment failed</Badge>;
-}
-
-function formatDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "Asia/Jakarta",
-  }).format(new Date(iso));
 }

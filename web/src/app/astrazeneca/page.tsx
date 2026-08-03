@@ -4,9 +4,11 @@ import { Suspense } from "react";
 import { ArrowLeft } from "lucide-react";
 
 import { ArticleCardGallery } from "@/components/article-card-gallery";
+import { DateRangePicker } from "@/components/news-filters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { describeArticleListRange } from "@/lib/date-ranges";
 import { articleRepo } from "@/lib/repositories";
-import type { ArticleListFilters, ArticleSubcategory } from "@/lib/types";
+import type { ArticleListFilters, ArticleSubcategory, DateRange } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "About AstraZeneca",
@@ -35,13 +37,21 @@ export default async function AstraZenecaPage({
   const sp = await searchParams;
   const activeValue = sp.filter ?? "all";
   const activeTab = AZ_TABS.find((t) => t.value === activeValue) ?? AZ_TABS[0];
+  const dateFilter = parseDateFilter(sp);
 
   const filters: ArticleListFilters = {
-    range: "all-time",
+    range: dateFilter.range,
+    customDateFrom: dateFilter.customDateFrom,
+    customDateTo: dateFilter.customDateTo,
     categories: ["About AstraZeneca"],
     subcategories: activeTab.subcategories,
     limit: PAGE_SIZE,
   };
+  const rangeDescription = describeArticleListRange(
+    filters.range,
+    filters.customDateFrom,
+    filters.customDateTo,
+  );
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
@@ -62,16 +72,50 @@ export default async function AstraZenecaPage({
         </p>
       </header>
 
-      <AzFilterTabs activeValue={activeValue} />
+      <section className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <AzFilterTabs activeValue={activeValue} searchParams={sp} />
+          <div className="space-y-1.5 sm:w-[230px]">
+            <label
+              htmlFor="news-date-range"
+              className="block text-xs font-medium text-muted-foreground"
+            >
+              Date range
+            </label>
+            <DateRangePicker />
+          </div>
+        </div>
+        <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Displayed range:</span>{" "}
+          {rangeDescription}
+        </p>
+      </section>
 
-      <Suspense key={`list-${activeValue}`} fallback={<GallerySkeleton />}>
+      <Suspense key={`list-${activeValue}-${rangeDescription}`} fallback={<GallerySkeleton />}>
         <ResultGrid filters={filters} />
       </Suspense>
     </div>
   );
 }
 
-function AzFilterTabs({ activeValue }: { activeValue: string }) {
+function AzFilterTabs({
+  activeValue,
+  searchParams,
+}: {
+  activeValue: string;
+  searchParams: Record<string, string | undefined>;
+}) {
+  const hrefForTab = (value: string) => {
+    const params = new URLSearchParams();
+    for (const [key, val] of Object.entries(searchParams)) {
+      if (val !== undefined && key !== "page") params.set(key, val);
+    }
+    if (value === "all") params.delete("filter");
+    else params.set("filter", value);
+    const qs = params.toString();
+    return qs ? `/astrazeneca?${qs}` : "/astrazeneca";
+  };
+
   return (
     <div className="inline-flex rounded-md border bg-muted p-1">
       {AZ_TABS.map((tab) => {
@@ -79,7 +123,7 @@ function AzFilterTabs({ activeValue }: { activeValue: string }) {
         return (
           <Link
             key={tab.value}
-            href={tab.value === "all" ? "/astrazeneca" : `/astrazeneca?filter=${tab.value}`}
+            href={hrefForTab(tab.value)}
             className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
               isActive
                 ? "bg-background text-foreground shadow-sm"
@@ -92,6 +136,41 @@ function AzFilterTabs({ activeValue }: { activeValue: string }) {
       })}
     </div>
   );
+}
+
+function parseDateFilter(sp: Record<string, string | undefined>): {
+  range: DateRange;
+  customDateFrom?: string;
+  customDateTo?: string;
+} {
+  const legacyDate = validIsoDate(sp.date);
+  const requestedFrom = validIsoDate(sp.from);
+  const requestedTo = validIsoDate(sp.to);
+  const firstBound = requestedFrom ?? requestedTo ?? legacyDate;
+  const secondBound = requestedTo ?? requestedFrom ?? legacyDate;
+
+  if (!firstBound || !secondBound) return { range: "all-time" };
+
+  return {
+    range: "custom",
+    customDateFrom: firstBound <= secondBound ? firstBound : secondBound,
+    customDateTo: firstBound <= secondBound ? secondBound : firstBound,
+  };
+}
+
+function validIsoDate(value: string | undefined): string | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return value;
 }
 
 async function ResultGrid({ filters }: { filters: ArticleListFilters }) {
