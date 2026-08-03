@@ -5,7 +5,7 @@ name: Competitor News Scrape & Enrich
 # belum punya enrichment row dan dibatasi cap per run/per company.
 on:
   schedule:
-    - cron: "37 1,13 * * *"
+    - cron: "37 22,5,13 * * *"
   workflow_dispatch:
     inputs:
       hours:
