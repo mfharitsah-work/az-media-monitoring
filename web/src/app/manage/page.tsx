@@ -171,7 +171,7 @@ function UserListCard({
                       <option value="superadmin">Superadmin</option>
                     </select>
                   </label>
-                  <Button type="submit" variant="outline" size="sm" className="w-full">
+                  <Button type="submit" variant="outline" size="sm" className="w-full mt-2">
                     Update role
                   </Button>
                 </form>
@@ -180,7 +180,7 @@ function UserListCard({
                   <input type="hidden" name="action" value="reset_password" />
                   <input type="hidden" name="email" value={user.email} />
                   <LabeledInput label="New Password" name="password" type="password" required />
-                  <Button type="submit" variant="outline" size="sm" className="w-full">
+                  <Button type="submit" variant="outline" size="sm" className="w-full mt-2">
                     Reset password
                   </Button>
                 </form>

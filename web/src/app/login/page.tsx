@@ -59,7 +59,7 @@ export default async function LoginPage({
               autoComplete="current-password"
             />
           </label>
-          <Button type="submit" className="w-full">
+          <Button type="submit" className="w-full mt-2">
             Sign in
           </Button>
         </form>
