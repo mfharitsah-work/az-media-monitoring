@@ -78,6 +78,9 @@ Required Vercel environment variables:
 | `BQ_LOCATION` | Defaults to `asia-southeast2` if omitted |
 | `GCP_SA_JSON` | Full service account JSON content |
 | `REVALIDATE_SECRET` | Must match the GitHub Actions secret |
+| `AUTH_SECRET` | Long random secret for 60-minute signed admin sessions |
+| `NEXT_PUBLIC_GITHUB_REPO_URL` | Optional, used by `/manage` quick links |
+| `NEXT_PUBLIC_SITE_URL` | Optional, production site quick link |
 
 After deployment, smoke check:
 
@@ -212,6 +215,10 @@ Main objects:
 | `competitor_news_enrichment` | Cerebras enrichment rows for competitor news |
 | `competitor_news_enrichment_latest` | 1 latest enrichment row per article id |
 | `competitor_news_latest` | Joined raw + enrichment view for the web app |
+| `auth_users` | Append-only admin/superadmin credential versions |
+| `auth_users_latest` | 1 latest credential row per email |
+| `auth_audit_logs` | Login and admin credential audit logs |
+| `compose_digest_logs` | Compose Digest Email usage logs |
 | `pipeline_state` | Last successful scrape timestamp |
 
 Loaders intentionally avoid BigQuery DML/MERGE so the project can run without billing enabled. They dedupe by building a replacement table and copying it over the target table.
@@ -239,6 +246,20 @@ BigQuery smoke test:
 cd web
 npx dotenv -e ../.env -- tsx scripts/smoke-test-dal.ts
 ```
+
+Bootstrap first superadmin:
+
+```bash
+cd web
+npx dotenv -e ../.env -- npm run bootstrap:superadmin -- \
+  --email you@astrazeneca.com \
+  --name "Your Name" \
+  --job-title "Communications Lead" \
+  --password "temporary-password"
+```
+
+If `--password` is omitted, the script generates a temporary password and
+prints it once. Store it securely.
 
 ## Troubleshooting
 

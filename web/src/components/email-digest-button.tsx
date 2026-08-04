@@ -12,6 +12,7 @@ import {
   RECIPIENT_TO,
   type SenderInfo,
 } from "@/lib/email-template";
+import type { SessionUser } from "@/lib/auth/types";
 import type { Article, DigestDateRange } from "@/lib/types";
 
 const SENDER_STORAGE_KEY = "az-digest-sender";
@@ -58,12 +59,16 @@ const DIGEST_OPTIONS: {
  */
 export function EmailDigestButton({
   articleGroups,
+  currentUser,
 }: {
   articleGroups: ArticleGroups;
+  currentUser: SessionUser;
 }) {
   const today = useMemo(() => todayInJakarta(), []);
   const [open, setOpen] = useState(false);
-  const [sender, setSender] = useState<SenderInfo>(readStoredSender);
+  const [sender, setSender] = useState<SenderInfo>(() =>
+    defaultSenderFromUser(currentUser) ?? readStoredSender(),
+  );
   const [recipients, setRecipients] =
     useState<RecipientDraft>(readStoredRecipients);
   const [selectedRanges, setSelectedRanges] =
@@ -126,6 +131,14 @@ export function EmailDigestButton({
   };
 
   const pasteToOutlook = async () => {
+    await logComposeDigest({
+      sender,
+      recipients,
+      subject,
+      selectedRanges,
+      selectedArticles,
+    }).catch(() => undefined);
+
     try {
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         await navigator.clipboard.write([
@@ -301,6 +314,45 @@ export function EmailDigestButton({
       )}
     </>
   );
+}
+
+async function logComposeDigest({
+  sender,
+  recipients,
+  subject,
+  selectedRanges,
+  selectedArticles,
+}: {
+  sender: SenderInfo;
+  recipients: RecipientDraft;
+  subject: string;
+  selectedRanges: DigestDateRange[];
+  selectedArticles: Article[];
+}) {
+  await fetch("/api/admin/compose-logs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      senderEmail: sender.email,
+      senderName: sender.name,
+      senderJobTitle: sender.jobTitle,
+      toRecipients: normalizeRecipientList(recipients.to),
+      ccRecipients: normalizeRecipientList(recipients.cc),
+      subject,
+      dateRanges: selectedRanges,
+      articleCount: selectedArticles.length,
+      articleIds: selectedArticles.map((article) => article.id),
+    }),
+  });
+}
+
+function defaultSenderFromUser(user: SessionUser): SenderInfo | null {
+  if (user.role === "guest") return null;
+  return {
+    name: user.name,
+    jobTitle: user.jobTitle,
+    email: user.email,
+  };
 }
 
 function collectArticles(

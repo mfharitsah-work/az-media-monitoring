@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { SessionUser } from "@/lib/auth/types";
 
 const NAV_ITEMS = [
   { href: "/", label: "All News" },
@@ -11,8 +12,12 @@ const NAV_ITEMS = [
   { href: "/analytics", label: "Analytics" },
 ] as const;
 
-export function SiteHeader() {
+export function SiteHeader({ user }: { user: SessionUser }) {
   const pathname = usePathname();
+  const navItems =
+    user.role === "superadmin"
+      ? [...NAV_ITEMS, { href: "/manage", label: "Manage" }]
+      : NAV_ITEMS;
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60" style={{ backgroundColor: "var(--brand-mulberry)" }}>
@@ -30,8 +35,8 @@ export function SiteHeader() {
             Media Monitoring
           </span>
         </Link>
-        <nav className="flex items-center gap-0.5 sm:gap-1">
-          {NAV_ITEMS.map((item) => {
+        <nav className="flex min-w-0 items-center gap-0.5 sm:gap-1">
+          {navItems.map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Link
@@ -49,6 +54,29 @@ export function SiteHeader() {
               </Link>
             );
           })}
+          <div className="ml-1 flex items-center gap-1 border-l border-white/20 pl-2 lg:gap-2 lg:pl-3">
+            <span className="hidden max-w-40 truncate text-xs font-medium text-white/80 lg:inline">
+              {user.role === "guest" ? "Guest" : `${user.name} (${user.role})`}
+            </span>
+            {user.role === "guest" ? (
+              <Link
+                href={`/login?redirectTo=${encodeURIComponent(pathname)}`}
+                className="rounded-md bg-white/10 px-2 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
+              >
+                <span className="hidden sm:inline">Admin </span>Login
+              </Link>
+            ) : (
+              <form action="/api/auth/logout" method="post">
+                <input type="hidden" name="redirectTo" value={pathname} />
+                <button
+                  type="submit"
+                  className="rounded-md bg-white/10 px-2 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
+                >
+                  Logout
+                </button>
+              </form>
+            )}
+          </div>
         </nav>
       </div>
     </header>

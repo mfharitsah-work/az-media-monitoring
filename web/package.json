@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx scripts/unit-tests.ts"
+    "test": "tsx scripts/unit-tests.ts",
+    "bootstrap:superadmin": "tsx scripts/bootstrap-superadmin.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

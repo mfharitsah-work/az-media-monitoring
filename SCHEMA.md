@@ -195,6 +195,44 @@ last_success_at -> now + buffer
 
 instead of a fixed 24-hour window.
 
+### `auth_users`
+
+Append-only credential version table for admin and superadmin users. Guest is
+not stored here; anonymous visitors are treated as `guest`.
+
+| Property | Value |
+|---|---|
+| Partition | `DATE(updated_at)` |
+| Cluster | `email`, `role` |
+| Dedupe/latest key | `email` via `auth_users_latest` |
+
+Important columns:
+
+| Column | Type | Notes |
+|---|---|---|
+| `email` | string | Login email, normalized lowercase |
+| `name` | string | Used to autofill digest sender name |
+| `job_title` | string | Used to autofill digest sender job title |
+| `role` | string | `admin` or `superadmin` |
+| `password_hash` | string | PBKDF2 hash only; never plaintext |
+| `is_active` | bool | Inactive users cannot login |
+| `last_login_at` | timestamp | Updated after successful login |
+| `action` | string | create/login/reset_password/set_role/deactivate/reactivate |
+
+### `auth_users_latest`
+
+One latest row per email, ordered by `updated_at DESC, version_id DESC`.
+
+### `auth_audit_logs`
+
+Append-only log for login and credential management events.
+
+### `compose_digest_logs`
+
+Append-only log for Compose Digest Email usage. It stores the logged-in user,
+sender autofill values actually used in the dialog, recipients, subject,
+selected digest ranges, and article ids.
+
 ## URL Identity
 
 Article identity is based on canonicalized URL before `make_article_id(url)`.

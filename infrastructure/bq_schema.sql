@@ -203,3 +203,88 @@ CREATE TABLE IF NOT EXISTS `az_daily_news_collection.pipeline_state` (
 OPTIONS(
   description="Small state table used to compute dynamic scheduled scrape windows."
 );
+
+-- =============================================================================
+-- TABLE: auth_users
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `az_daily_news_collection.auth_users` (
+  id             STRING    NOT NULL OPTIONS(description="Stable auth user id"),
+  email          STRING    NOT NULL OPTIONS(description="Normalized login email"),
+  name           STRING    NOT NULL OPTIONS(description="Display name used for compose autofill"),
+  job_title      STRING             OPTIONS(description="Job title used for compose autofill"),
+  role           STRING    NOT NULL OPTIONS(description="admin or superadmin"),
+  password_hash  STRING    NOT NULL OPTIONS(description="PBKDF2 password hash; never store plaintext"),
+  password_algo  STRING    NOT NULL OPTIONS(description="Hash algorithm identifier"),
+  is_active      BOOL      NOT NULL OPTIONS(description="Active users can login"),
+  created_at     TIMESTAMP NOT NULL OPTIONS(description="Initial creation timestamp"),
+  updated_at     TIMESTAMP NOT NULL OPTIONS(description="Version timestamp"),
+  last_login_at  TIMESTAMP          OPTIONS(description="Last successful login timestamp"),
+  created_by     STRING             OPTIONS(description="Creator email"),
+  updated_by     STRING             OPTIONS(description="Last updater email"),
+  version_id     STRING    NOT NULL OPTIONS(description="Append-only version id"),
+  action         STRING    NOT NULL OPTIONS(description="create, login, reset_password, set_role, deactivate, reactivate")
+)
+PARTITION BY DATE(updated_at)
+CLUSTER BY email, role
+OPTIONS(
+  description="Append-only admin/superadmin credential versions. Query via auth_users_latest.",
+  partition_expiration_days=NULL
+);
+
+-- =============================================================================
+-- VIEW: auth_users_latest (1 row per email)
+-- =============================================================================
+CREATE OR REPLACE VIEW `az_daily_news_collection.auth_users_latest` AS
+SELECT * EXCEPT(rn)
+FROM (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY email ORDER BY updated_at DESC, version_id DESC) AS rn
+  FROM `az_daily_news_collection.auth_users`
+)
+WHERE rn = 1;
+
+-- =============================================================================
+-- TABLE: auth_audit_logs
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `az_daily_news_collection.auth_audit_logs` (
+  id            STRING    NOT NULL OPTIONS(description="Audit log id"),
+  actor_email   STRING             OPTIONS(description="Actor email, nullable for failed login"),
+  actor_role    STRING             OPTIONS(description="Actor role"),
+  action        STRING    NOT NULL OPTIONS(description="login_success, login_failed, create_user, reset_password, etc."),
+  target_email  STRING             OPTIONS(description="Target user email"),
+  details_json  STRING             OPTIONS(description="JSON details for the event"),
+  created_at    TIMESTAMP NOT NULL OPTIONS(description="Event timestamp")
+)
+PARTITION BY DATE(created_at)
+CLUSTER BY actor_email, action
+OPTIONS(
+  description="Append-only authentication/admin audit logs.",
+  partition_expiration_days=NULL
+);
+
+-- =============================================================================
+-- TABLE: compose_digest_logs
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `az_daily_news_collection.compose_digest_logs` (
+  id                STRING    NOT NULL OPTIONS(description="Compose log id"),
+  composed_at       TIMESTAMP NOT NULL OPTIONS(description="Compose timestamp"),
+  user_email        STRING    NOT NULL OPTIONS(description="Logged in admin/superadmin email"),
+  user_name         STRING             OPTIONS(description="Logged in user display name"),
+  user_role         STRING    NOT NULL OPTIONS(description="admin or superadmin"),
+  sender_email      STRING             OPTIONS(description="Sender email used in compose dialog"),
+  sender_name       STRING             OPTIONS(description="Sender name used in compose dialog"),
+  sender_job_title  STRING             OPTIONS(description="Sender job title used in compose dialog"),
+  to_recipients     STRING             OPTIONS(description="Normalized To recipient list"),
+  cc_recipients     STRING             OPTIONS(description="Normalized CC recipient list"),
+  subject           STRING             OPTIONS(description="Email subject"),
+  date_ranges_json  STRING             OPTIONS(description="Selected digest ranges as JSON array"),
+  article_count     INT64              OPTIONS(description="Number of articles included"),
+  article_ids_json  STRING             OPTIONS(description="Article ids included as JSON array")
+)
+PARTITION BY DATE(composed_at)
+CLUSTER BY user_email, user_role
+OPTIONS(
+  description="Append-only logs for Compose Digest Email usage.",
+  partition_expiration_days=NULL
+);

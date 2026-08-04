@@ -22,6 +22,9 @@ Required variables:
 | `GCP_SA_JSON` | Required on Vercel; optional locally if using ADC |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Optional local path to service account JSON |
 | `REVALIDATE_SECRET` | Required for `/api/revalidate` |
+| `AUTH_SECRET` | Required in production for signed admin sessions |
+| `NEXT_PUBLIC_GITHUB_REPO_URL` | Optional quick link source for `/manage` |
+| `NEXT_PUBLIC_SITE_URL` | Optional production quick link for `/manage` |
 
 Run locally:
 
@@ -44,6 +47,16 @@ BigQuery smoke test:
 npx dotenv -e ../.env -- tsx scripts/smoke-test-dal.ts
 ```
 
+Bootstrap first superadmin:
+
+```bash
+npx dotenv -e ../.env -- npm run bootstrap:superadmin -- \
+  --email you@astrazeneca.com \
+  --name "Your Name" \
+  --job-title "Communications Lead" \
+  --password "temporary-password"
+```
+
 ## Important Files
 
 | File | Purpose |
@@ -53,8 +66,13 @@ npx dotenv -e ../.env -- tsx scripts/smoke-test-dal.ts
 | `src/app/news/[id]/page.tsx` | Article detail page |
 | `src/app/competitors/page.tsx` | Competitor news page |
 | `src/app/analytics/page.tsx` | Analytics dashboard |
+| `src/app/login/page.tsx` | Admin/superadmin login |
+| `src/app/manage/page.tsx` | Superadmin management page |
+| `src/app/api/auth/login/route.ts` | Login endpoint |
+| `src/app/api/manage/users/route.ts` | Superadmin user management endpoint |
 | `src/components/competitor-news-filters.tsx` | Competitor news filter UI |
 | `src/components/email-digest-launcher.tsx` | Daily digest compose UI |
+| `src/lib/auth/` | Auth/session/password/BigQuery auth repository |
 | `src/lib/repositories/bigquery-article-repository.ts` | BigQuery data access |
 | `src/lib/types.ts` | Frontend domain types |
 | `src/app/api/revalidate/route.ts` | Cache invalidation endpoint |
