@@ -1,30 +1,37 @@
-import { EmailDigestButton } from "@/components/email-digest-button";
-import { currentUser } from "@/lib/auth/session";
-import { canComposeDigest } from "@/lib/auth/types";
-import { articleRepo } from "@/lib/repositories";
+"use client";
+
+import {
+  EmailDigestButton,
+  type ArticleGroups,
+} from "@/components/email-digest-button";
+import {
+  canComposeDigestClient,
+  useCurrentSessionUser,
+} from "@/lib/auth/client-session";
 
 /**
- * Server component yang mengambil artikel untuk opsi digest lalu render tombol
- * compose. Reusable di home page dan All News page saat Latest News aktif.
+ * Client-side launcher supaya page render tidak perlu membaca auth cookie atau
+ * preload artikel digest. Data digest baru diminta saat admin membuka compose.
  */
-export async function EmailDigestLauncher() {
-  const user = await currentUser();
-  if (!canComposeDigest(user)) return null;
+export function EmailDigestLauncher() {
+  const { user, ready } = useCurrentSessionUser();
 
-  const [yesterday, today, latest] = await Promise.all([
-    articleRepo.findMany({ range: "yesterday", limit: 200 }),
-    articleRepo.findMany({ range: "today", limit: 200 }),
-    articleRepo.findMany({ range: "latest", limit: 300 }),
-  ]);
+  if (!ready || !canComposeDigestClient(user)) return null;
 
   return (
     <EmailDigestButton
-      articleGroups={{
-        yesterday: yesterday.items,
-        today: today.items,
-        latest: latest.items,
-      }}
       currentUser={user}
+      loadArticleGroups={loadDigestArticleGroups}
     />
   );
+}
+
+async function loadDigestArticleGroups(): Promise<ArticleGroups> {
+  const res = await fetch("/api/admin/digest-articles", {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  if (!res.ok) throw new Error("Failed to load digest articles.");
+  const payload = await res.json();
+  return payload.articleGroups as ArticleGroups;
 }

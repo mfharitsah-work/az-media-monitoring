@@ -25,7 +25,7 @@ interface RecipientDraft {
   cc: string;
 }
 
-type ArticleGroups = Record<DigestDateRange, Article[]>;
+export type ArticleGroups = Record<DigestDateRange, Article[]>;
 
 const DIGEST_OPTIONS: {
   value: DigestDateRange;
@@ -58,14 +58,17 @@ const DIGEST_OPTIONS: {
  * Body mailto hanya instruksi singkat karena HTML table harus masuk lewat paste.
  */
 export function EmailDigestButton({
-  articleGroups,
   currentUser,
+  loadArticleGroups,
 }: {
-  articleGroups: ArticleGroups;
   currentUser: SessionUser;
+  loadArticleGroups: () => Promise<ArticleGroups>;
 }) {
   const today = useMemo(() => todayInJakarta(), []);
   const [open, setOpen] = useState(false);
+  const [articleGroups, setArticleGroups] = useState<ArticleGroups | null>(null);
+  const [loadingArticles, setLoadingArticles] = useState(false);
+  const [articleLoadError, setArticleLoadError] = useState<string | null>(null);
   const [sender, setSender] = useState<SenderInfo>(() =>
     defaultSenderFromUser(currentUser) ?? readStoredSender(),
   );
@@ -76,7 +79,7 @@ export function EmailDigestButton({
   const [subjectOverride, setSubjectOverride] = useState<string | null>(null);
 
   const selectedArticles = useMemo(
-    () => collectArticles(articleGroups, selectedRanges),
+    () => articleGroups ? collectArticles(articleGroups, selectedRanges) : [],
     [articleGroups, selectedRanges],
   );
   const dateLabel = useMemo(
@@ -130,7 +133,28 @@ export function EmailDigestButton({
     });
   };
 
+  const loadArticles = async () => {
+    if (articleGroups || loadingArticles) return;
+    setLoadingArticles(true);
+    setArticleLoadError(null);
+    try {
+      const groups = await loadArticleGroups();
+      setArticleGroups(groups);
+    } catch {
+      setArticleLoadError("Could not load digest articles. Please try again.");
+    } finally {
+      setLoadingArticles(false);
+    }
+  };
+
+  const openComposer = () => {
+    setOpen(true);
+    void loadArticles();
+  };
+
   const pasteToOutlook = async () => {
+    if (!articleGroups || loadingArticles || articleLoadError) return;
+
     await logComposeDigest({
       sender,
       recipients,
@@ -159,7 +183,7 @@ export function EmailDigestButton({
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="gap-2">
+      <Button onClick={openComposer} className="gap-2">
         <Mail className="h-4 w-4" />
         Compose Digest Email
       </Button>
@@ -293,17 +317,39 @@ export function EmailDigestButton({
                   Preview ({selectedArticles.length} article
                   {selectedArticles.length === 1 ? "" : "s"}, {dateLabel})
                 </span>
-                <div
-                  className="max-h-72 overflow-auto rounded-md border bg-white p-3"
-                  dangerouslySetInnerHTML={{ __html: template.html }}
-                />
+                {loadingArticles ? (
+                  <div className="flex h-36 items-center justify-center rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                    Loading digest articles...
+                  </div>
+                ) : articleLoadError ? (
+                  <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                    <p className="text-destructive">{articleLoadError}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void loadArticles()}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : (
+                  <div
+                    className="max-h-72 overflow-auto rounded-md border bg-white p-3"
+                    dangerouslySetInnerHTML={{ __html: template.html }}
+                  />
+                )}
               </div>
 
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={pasteToOutlook} className="gap-2">
+                <Button
+                  onClick={pasteToOutlook}
+                  disabled={!articleGroups || loadingArticles || !!articleLoadError}
+                  className="gap-2"
+                >
                   <Send className="h-4 w-4" />
                   Paste to Outlook
                 </Button>

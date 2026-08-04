@@ -6,8 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 
-import type { SessionUser } from "@/lib/auth/types";
 import { UserNavMenu } from "@/components/user-nav-menu";
+import { useCurrentSessionUser } from "@/lib/auth/client-session";
 
 const NAV_ITEMS = [
   { href: "/", label: "All News" },
@@ -16,9 +16,10 @@ const NAV_ITEMS = [
   { href: "/analytics", label: "Analytics" },
 ] as const;
 
-export function SiteHeader({ user }: { user: SessionUser }) {
+export function SiteHeader() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, ready: authReady } = useCurrentSessionUser(pathname);
 
   return (
     <header
@@ -63,7 +64,7 @@ export function SiteHeader({ user }: { user: SessionUser }) {
 
         <div className="flex items-center gap-2">
           <div className="hidden lg:block">
-            <UserNavMenu user={user} pathname={pathname} />
+            <UserNavMenu user={user} pathname={pathname} loading={!authReady} />
           </div>
 
           <button
@@ -104,7 +105,7 @@ export function SiteHeader({ user }: { user: SessionUser }) {
             </nav>
 
             <div className="mt-3 border-t border-white/15 pt-3">
-              <UserNavMenu user={user} pathname={pathname} />
+              <UserNavMenu user={user} pathname={pathname} loading={!authReady} />
             </div>
           </div>
         </div>

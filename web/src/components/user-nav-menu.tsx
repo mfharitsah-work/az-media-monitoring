@@ -9,11 +9,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 export function UserNavMenu({
   user,
   pathname,
+  loading = false,
 }: {
   user: SessionUser;
   pathname: string;
+  loading?: boolean;
 }) {
   const isGuest = user.role === "guest";
+  const displayName = loading ? "User" : isGuest ? "Guest" : user.name;
 
   return (
     <Popover>
@@ -23,7 +26,7 @@ export function UserNavMenu({
       >
         <UserRound className="size-4" />
         <span className="hidden max-w-28 truncate md:inline">
-          {isGuest ? "Guest" : user.name}
+          {displayName}
         </span>
         <ChevronDown className="size-3.5 opacity-80" />
       </PopoverTrigger>
@@ -31,10 +34,14 @@ export function UserNavMenu({
       <PopoverContent align="end" className="w-72 p-0">
         <div className="border-b px-4 py-3">
           <p className="text-sm font-semibold">
-            {isGuest ? "Guest access" : user.name}
+            {loading ? "Checking session" : isGuest ? "Guest access" : user.name}
           </p>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {isGuest ? "Browsing without admin privileges" : user.email}
+            {loading
+              ? "Loading user access..."
+              : isGuest
+                ? "Browsing without admin privileges"
+                : user.email}
           </p>
           {!isGuest && user.jobTitle ? (
             <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -44,7 +51,11 @@ export function UserNavMenu({
         </div>
 
         <div className="space-y-1 p-2">
-          {isGuest ? (
+          {loading ? (
+            <p className="px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
+              User details will appear here after session check completes.
+            </p>
+          ) : isGuest ? (
             <>
               <p className="px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
                 Login is only needed for admin tools such as composing digest
