@@ -27,7 +27,11 @@ from fetch_competitor_counts import (
 )
 from news_pipeline.config import GOOGLE_NEWS_RSS, JUNK_TITLE_RE, USER_AGENT
 from news_pipeline.extraction import parse_source_from_title, resolve_google_news_url
-from news_pipeline.url_utils import canonicalize_article_url, is_whitelisted_source
+from news_pipeline.url_utils import (
+    canonicalize_article_url,
+    is_blocked_source_url,
+    is_whitelisted_source,
+)
 
 
 def make_competitor_article_id(company: str, canonical_url: str) -> str:
@@ -77,6 +81,9 @@ def fetch_one_company(company: str, hours: int, max_per_company: int) -> list[di
             real_url = entry.link
 
         canonical_url = canonicalize_article_url(real_url)
+        if is_blocked_source_url(canonical_url):
+            continue
+
         is_whitelisted = is_whitelisted_source(canonical_url)
         if not bypass_whitelist and not is_whitelisted:
             continue

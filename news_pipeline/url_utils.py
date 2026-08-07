@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from .config import SOURCE_WHITELIST
+from .config import SOURCE_BLOCKLIST, SOURCE_WHITELIST, VIDEO_PATH_SEGMENT_RE
 
 TRACKING_QUERY_KEYS = {
     "fbclid",
@@ -83,10 +83,25 @@ def make_article_id(url: str) -> str:
     return hashlib.sha256(identity_url.encode("utf-8")).hexdigest()[:12]
 
 
-def is_whitelisted_source(url: str) -> bool:
-    """True kalau domain URL ada di SOURCE_WHITELIST (incl. subdomain match)."""
-    from urllib.parse import urlparse
+def _normalized_netloc(url: str) -> str:
     netloc = urlparse(url).netloc.lower()
     if netloc.startswith("www."):
         netloc = netloc[4:]
+    return netloc
+
+
+def is_blocked_source_url(url: str) -> bool:
+    """True kalau URL ada di blocklist walau apex domain-nya whitelisted."""
+    parsed = urlparse(url)
+    netloc = _normalized_netloc(url)
+    if any(netloc == d or netloc.endswith("." + d) for d in SOURCE_BLOCKLIST):
+        return True
+    return bool(VIDEO_PATH_SEGMENT_RE.search(parsed.path))
+
+
+def is_whitelisted_source(url: str) -> bool:
+    """True kalau domain URL ada di SOURCE_WHITELIST dan tidak di-block."""
+    if is_blocked_source_url(url):
+        return False
+    netloc = _normalized_netloc(url)
     return any(netloc == d or netloc.endswith("." + d) for d in SOURCE_WHITELIST)

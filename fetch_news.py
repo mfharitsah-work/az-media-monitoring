@@ -52,6 +52,7 @@ from news_pipeline.groq_analysis import (
 from news_pipeline.output import OUTPUT_COLUMNS, save_csv, save_json
 from news_pipeline.url_utils import (
     canonicalize_article_url,
+    is_blocked_source_url,
     is_whitelisted_source,
     make_article_id,
 )
@@ -78,6 +79,10 @@ def process_article(entry, fetch_body: bool, groq: GroqClient | None) -> dict | 
     url = resolve_google_news_url(raw_url)
 
     # Filter source whitelist — drop sebelum body fetch + Groq call (hemat quota)
+    if is_blocked_source_url(url):
+        print(f"    skip blocked video/non-article source: {url[:80]}", file=sys.stderr)
+        return None
+
     if not is_whitelisted_source(url):
         print(f"    skip non-whitelisted source: {url[:80]}", file=sys.stderr)
         return None

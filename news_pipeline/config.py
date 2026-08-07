@@ -203,7 +203,18 @@ SOURCE_WHITELIST = {
     "grid.id",             # covers nakita.grid.id + health.grid.id (GridHealth)
 }
 
-# Title patterns yang menandakan entry RSS rusak (image filename, dll.) — skip.
+# Source/path blocklist untuk halaman di domain whitelist yang bukan artikel teks.
+# Contoh: `20.detik.com` ikut match whitelist `detik.com`, tetapi kontennya video.
+SOURCE_BLOCKLIST = {
+    "20.detik.com",
+    "video.detik.com",
+}
+
+# Skip URL dengan path segment video eksplisit, mis. `/video/...` atau
+# `/detikupdate/.../video-kepala-bgn-temui-menkes`.
+VIDEO_PATH_SEGMENT_RE = re.compile(r"(^|/)(video-|video/)", re.IGNORECASE)
+
+# Title patterns yang menandakan entry RSS rusak (image filename, dll.) - skip.
 JUNK_TITLE_RE = re.compile(r"\.(jpg|jpeg|png|gif|webp|html|aspx)\b", re.IGNORECASE)
 
 # Body length threshold before sending text to Groq. Below this, article body is

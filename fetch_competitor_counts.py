@@ -44,6 +44,7 @@ from news_pipeline.config import (
 from news_pipeline.extraction import resolve_google_news_url
 from news_pipeline.url_utils import (
     canonicalize_article_url,
+    is_blocked_source_url,
     is_whitelisted_source,
 )
 
@@ -129,6 +130,9 @@ def fetch_one_company(company: str, hours: int) -> list[dict]:
         except Exception:
             real_url = entry.link  # fallback ke link asli kalau decoder fail
         real_url = canonicalize_article_url(real_url)
+
+        if is_blocked_source_url(real_url):
+            continue
 
         if real_url in seen_urls:
             continue
