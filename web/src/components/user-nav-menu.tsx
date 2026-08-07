@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, LogIn, LogOut, Settings, UserRound } from "lucide-react";
+import {
+  ChevronDown,
+  KeyRound,
+  LogIn,
+  LogOut,
+  Settings,
+  UserRound,
+} from "lucide-react";
 
 import type { SessionUser } from "@/lib/auth/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -77,6 +84,14 @@ export function UserNavMenu({
                   {user.role}
                 </span>
               </div>
+
+              <Link
+                href="/account"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium hover:bg-muted"
+              >
+                <KeyRound className="size-4" />
+                Account settings
+              </Link>
 
               {user.role === "superadmin" ? (
                 <Link

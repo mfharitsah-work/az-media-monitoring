@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,8 @@ import {
   ShareOfVoiceTableSkeleton,
 } from "@/components/share-of-voice-table";
 import { describeAnalyticsRange } from "@/lib/date-ranges";
+import { currentUser } from "@/lib/auth/session";
+import { canComposeDigest } from "@/lib/auth/types";
 import { articleRepo } from "@/lib/repositories";
 import { isAnalyticsRange, type AnalyticsRange } from "@/lib/types";
 
@@ -45,7 +48,11 @@ export default async function AnalyticsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const sp = await searchParams;
+  const [sp, user] = await Promise.all([searchParams, currentUser()]);
+  if (!canComposeDigest(user)) {
+    notFound();
+  }
+
   const rawRange = sp.range ?? "last-7-days";
   // Default + validate — invalid string fallback ke "last-7-days".
   const range: AnalyticsRange = isAnalyticsRange(rawRange)

@@ -7,7 +7,10 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 
 import { UserNavMenu } from "@/components/user-nav-menu";
-import { useCurrentSessionUser } from "@/lib/auth/client-session";
+import {
+  canComposeDigestClient,
+  useCurrentSessionUser,
+} from "@/lib/auth/client-session";
 
 const NAV_ITEMS = [
   { href: "/", label: "All News" },
@@ -20,6 +23,9 @@ export function SiteHeader() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, ready: authReady } = useCurrentSessionUser(pathname);
+  const navItems = canComposeDigestClient(user)
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((item) => item.href !== "/analytics");
 
   return (
     <header
@@ -42,7 +48,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden min-w-0 items-center gap-1 lg:flex">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Link
@@ -83,7 +89,7 @@ export function SiteHeader() {
         <div className="border-t border-white/15 lg:hidden">
           <div className="mx-auto max-h-[calc(100dvh-4.5rem)] max-w-7xl overflow-y-auto px-4 py-3 sm:px-6">
             <nav className="flex flex-col gap-1">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const active = isActive(pathname, item.href);
                 return (
                   <Link

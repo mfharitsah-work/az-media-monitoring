@@ -225,7 +225,7 @@ function ComposeLogsCard({ logs }: { logs: ComposeDigestLog[] }) {
     <Card>
       <CardContent className="space-y-4 p-5">
         <h2 className="font-semibold">Compose Digest Email Logs</h2>
-        <div className="space-y-3">
+        <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
           {logs.map((log) => (
             <div key={log.id} className="rounded-lg border p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -255,7 +255,7 @@ function AuditLogsCard({ logs }: { logs: AuthAuditLog[] }) {
     <Card>
       <CardContent className="space-y-4 p-5">
         <h2 className="font-semibold">Admin Audit Logs</h2>
-        <div className="space-y-3">
+        <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
           {logs.map((log) => (
             <div key={log.id} className="rounded-lg border p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
