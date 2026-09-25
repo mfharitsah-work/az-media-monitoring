@@ -1,6 +1,6 @@
 name: Competitor News Scrape & Enrich
 
-# Schedule: dua kali sehari, 08:37 dan 20:37 WIB = 01:37 dan 13:37 UTC.
+# Schedule: tiga kali sehari, 05:37, 12:37, dan 20:37 WIB = 22:37, 05:37, 13:37 UTC.
 # Raw scrape selalu jalan dulu. Cerebras enrichment hanya memproses artikel yang
 # belum punya enrichment row dan dibatasi cap per run/per company.
 on:
@@ -71,7 +71,7 @@ jobs:
             --state-name competitor_news_scrape \
             --default-hours 24 \
             --min-hours 6 \
-            --max-hours 48 \
+            --max-hours 120 \
             --buffer-hours 3)"
           echo "hours=${HOURS}" >> "$GITHUB_OUTPUT"
           echo "Using competitor scrape window: ${HOURS} hours"
@@ -83,10 +83,19 @@ jobs:
             --max-per-company "${{ github.event.inputs.max_per_company || '20' }}" \
             --output competitor_news_raw.json
 
+      - name: Check competitor raw output
+        id: competitor_raw_output
+        run: |
+          HAS_ROWS="$(python -c "import json; d=json.load(open('competitor_news_raw.json', encoding='utf-8')); print('true' if len(d.get('rows', [])) > 0 else 'false')")"
+          echo "has_rows=${HAS_ROWS}" >> "$GITHUB_OUTPUT"
+          echo "Competitor raw scraper produced rows: ${HAS_ROWS}"
+
       - name: Load competitor raw news to BigQuery
+        if: steps.competitor_raw_output.outputs.has_rows == 'true'
         run: python bq_load_competitor_news.py competitor_news_raw.json
 
       - name: Update competitor scrape state
+        if: steps.competitor_raw_output.outputs.has_rows == 'true'
         run: python update_pipeline_state.py --state-name competitor_news_scrape
 
       - name: Enrich pending competitor news with Cerebras

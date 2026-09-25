@@ -66,7 +66,7 @@ jobs:
             --state-name daily_news_scrape \
             --default-hours 24 \
             --min-hours 6 \
-            --max-hours 48 \
+            --max-hours 120 \
             --buffer-hours 3)"
           echo "hours=${HOURS}" >> "$GITHUB_OUTPUT"
           echo "Using dynamic scrape window: ${HOURS} hours"
@@ -82,20 +82,29 @@ jobs:
             --max-per-keyword "${{ github.event.inputs.max_per_keyword || '5' }}" \
             --output news.csv
 
+      - name: Check scraper output
+        id: scraper_output
+        run: |
+          HAS_ROWS="$(python -c "import json; d=json.load(open('news.json', encoding='utf-8')); print('true' if len(d.get('articles', [])) > 0 else 'false')")"
+          echo "has_rows=${HAS_ROWS}" >> "$GITHUB_OUTPUT"
+          echo "Scraper produced rows: ${HAS_ROWS}"
+
       - name: Load to BigQuery
         # bq_load.py skip gracefully kalau JSON kosong (0 artikel) dan exit 0.
         # Loader memakai non-DML dedup overwrite supaya overlap window tidak
         # menambah duplicate rows, dan tetap kompatibel dengan BigQuery free tier.
+        if: steps.scraper_output.outputs.has_rows == 'true'
         run: python bq_load.py news.json
 
       - name: Update scrape state
         # State di-update setelah main scrape + main BigQuery load sukses.
         # Competitor scrape bersifat supplementary, jadi tidak menahan state utama.
+        if: steps.scraper_output.outputs.has_rows == 'true'
         run: python update_pipeline_state.py --state-name daily_news_scrape
 
       - name: Invalidate Vercel cache
         # Beritahu Next.js drop cached articles. Step di-skip kalau secret belum di-set.
-        if: success() && env.VERCEL_URL != '' && env.REVALIDATE_SECRET != ''
+        if: success() && steps.scraper_output.outputs.has_rows == 'true' && env.VERCEL_URL != '' && env.REVALIDATE_SECRET != ''
         run: |
           curl -X POST "${VERCEL_URL%/}/api/revalidate" \
             -H "Authorization: Bearer ${REVALIDATE_SECRET}" \
