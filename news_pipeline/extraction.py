@@ -22,7 +22,11 @@ def resolve_google_news_url(url: str) -> str:
         return url
     try:
         result = gnewsdecoder(url, interval=1)
-        if result.get("status") and result.get("decoded_url"):
+        # googlenewsdecoder <=0.1.x returned `status`; newer releases return
+        # `success`. Accept both so a package update does not silently drop all
+        # Google News RSS items as "non-whitelisted" Google URLs.
+        is_success = bool(result.get("success", result.get("status")))
+        if is_success and result.get("decoded_url"):
             return result["decoded_url"]
         print(f"    ! decode gagal: {result.get('message', '')[:80]}", file=sys.stderr)
         return url
